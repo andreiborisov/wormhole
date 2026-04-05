@@ -26,7 +26,7 @@
       "ip_cidr": ["66.22.192.0/18"]
     },
     {
-      "domain_suffix": ["linear.app"]
+      "domain_suffix": ["diabrowser.engineering", "linear.app", "raycast.com"]
     },
     {
       "domain_suffix": [
@@ -49,7 +49,14 @@
       ]
     },
     {
-      "domain_suffix": ["etsy.com", "nike.com", "uniqlo.com"]
+      "domain_suffix": [
+        "ebay.com",
+        "etsy.com",
+        "ikea.com",
+        "kickstarter.com",
+        "nike.com",
+        "uniqlo.com"
+      ]
     },
     {
       "domain_suffix": ["cdninstagram.com", "instagram.com"]
