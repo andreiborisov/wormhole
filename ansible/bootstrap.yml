@@ -2,43 +2,102 @@
 # One-time bootstrap: uploads your SSH public key to fresh servers that only
 # have root password access, then disables password authentication.
 #
+# Safe to re-run: hosts already reachable by key are skipped automatically.
+#
 # Usage:
 #   ansible-playbook bootstrap.yml
-#
-# You will be prompted for:
-#   - The root password (same for all hosts, or per-host if they differ — see below)
-#   - The path to your SSH public key
+
+- name: Collect credentials
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Detect private key path from inventory
+      ansible.builtin.set_fact:
+        _private_key: "{{ hostvars[groups['all'][0]]['ansible_ssh_private_key_file'] | default('') }}"
+
+    - name: Prompt for SSH public key path
+      ansible.builtin.pause:
+        prompt: "Path to SSH public key"
+        echo: true
+      register: _ssh_key_prompt
+      when: _private_key == ''
+
+    - name: Set SSH public key path
+      ansible.builtin.set_fact:
+        _public_key: >-
+          {{ (_private_key ~ '.pub') if _private_key != ''
+             else (_ssh_key_prompt.user_input | default('~/.ssh/id_ed25519.pub', true)) }}
+
+    - name: Test SSH key authentication for each host
+      ansible.builtin.command:
+        cmd: >-
+          ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no
+          {{ ('-i ' ~ _private_key) if _private_key != '' else '' }}
+          {{ hostvars[item]['ansible_user'] }}@{{ hostvars[item]['ansible_host'] }} true
+      loop: "{{ groups['all'] }}"
+      loop_control:
+        label: "{{ item }}"
+      register: _ssh_tests
+      failed_when: false
+      changed_when: false
+
+    - name: Build list of hosts that need bootstrapping
+      ansible.builtin.set_fact:
+        _bootstrap_hosts: "{{ _ssh_tests.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+
+    - name: Prompt for root password
+      ansible.builtin.pause:
+        prompt: "Root password for {{ item }}"
+        echo: false
+      loop: "{{ _bootstrap_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+      register: _passwords
+      no_log: true
+
+    - name: Configure hosts needing bootstrap
+      ansible.builtin.add_host:
+        name: "{{ _bootstrap_hosts[idx] }}"
+        needs_bootstrap: true
+        ansible_password: "{{ _passwords.results[idx].user_input }}"
+        ansible_ssh_common_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
+        ansible_ssh_public_key_path: "{{ _public_key }}"
+      loop: "{{ range(_bootstrap_hosts | length) | list }}"
+      loop_control:
+        loop_var: idx
+        label: "{{ _bootstrap_hosts[idx] }}"
+      no_log: true
+
+    - name: Mark already-bootstrapped hosts
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        needs_bootstrap: false
+        ansible_ssh_public_key_path: "{{ _public_key }}"
+      loop: "{{ _ssh_tests.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+      loop_control:
+        label: "{{ item }}"
 
 - name: Bootstrap SSH key authentication
   hosts: all
   gather_facts: false
-  vars_prompt:
-    - name: root_password
-      prompt: "Root password (same for all hosts)"
-      private: true
-    - name: ssh_public_key_path
-      prompt: "Path to SSH public key"
-      default: "~/.ssh/id_ed25519.pub"
-      private: false
-  vars:
-    ansible_password: "{{ root_password }}"
-    ansible_ssh_common_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
   tasks:
     - name: Upload SSH public key
       ansible.posix.authorized_key:
         user: "{{ ansible_user }}"
-        key: "{{ lookup('file', ssh_public_key_path) }}"
+        key: "{{ lookup('file', ansible_ssh_public_key_path) }}"
         state: present
+      when: needs_bootstrap | default(true)
 
     - name: Disable SSH password authentication
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: "^#?PasswordAuthentication"
         line: "PasswordAuthentication no"
+      when: needs_bootstrap | default(true)
       notify: Restart sshd
 
   handlers:
     - name: Restart sshd
       ansible.builtin.service:
-        name: sshd
+        name: ssh
         state: restarted
