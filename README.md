@@ -22,12 +22,11 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 - At least two fresh VPS instances with root access (one restricted, one unrestricted)
 
-#### Optional
+#### For automatic setup
 
-- [Homebrew](https://brew.sh)
-- [fish](https://fishshell.com) 3.2+ (for automatic setup)
+- [fish](https://fishshell.com) 3.2+
 
-### 1. Install dependencies
+### 1. Install dependencies (macOS only)
 
 ```fish
 brew bundle
