@@ -34,6 +34,9 @@
       ]
     },
     {
+      "domain_suffix": ["cloudfront.net"]
+    },
+    {
       "domain_suffix": [
         "dnskp.cc",
         "kino.pub",
