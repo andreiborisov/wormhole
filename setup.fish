@@ -60,32 +60,40 @@ if not grep -q '^\$ANSIBLE_VAULT' ansible/inventory/group_vars/all/vault.yml
 
     read -P "      Open vault.yml in \$EDITOR now? [Y/n] " open_editor
     if test "$open_editor" != n -a "$open_editor" != N
-        set -q EDITOR; or set EDITOR vi
         $EDITOR ansible/inventory/group_vars/all/vault.yml
     end
 
     info "Encrypting vault.yml..."
-    ansible-vault encrypt ansible/inventory/group_vars/all/vault.yml
+    # Run from ansible/ so ansible.cfg (and its vault_password_file path) is found correctly
+    cd ansible
+    ansible-vault encrypt inventory/group_vars/all/vault.yml
     or die "failed to encrypt vault.yml"
+    cd ..
 end
+
+# ── Run ansible from its directory so ansible.cfg paths resolve correctly ──────
+
+cd ansible
 
 # ── Ansible collections ────────────────────────────────────────────────────────
 
 info "Installing Ansible collections..."
-ansible-galaxy collection install -r ansible/requirements.yml
+ansible-galaxy collection install -r requirements.yml
 or die "failed to install Ansible collections"
 
 # ── Bootstrap SSH keys ─────────────────────────────────────────────────────────
 
 info "Bootstrapping SSH key authentication on all hosts..."
-ansible-playbook ansible/bootstrap.yml
+ansible-playbook bootstrap.yml
 or die "bootstrap playbook failed"
 
 # ── Full provisioning ──────────────────────────────────────────────────────────
 
 info "Provisioning all nodes..."
-ansible-playbook ansible/site.yml
+ansible-playbook site.yml
 or die "site playbook failed"
 
+cd ..
+
 echo ""
-echo "$green$bold All done.$reset wormhole is running on all nodes."
+echo "$green$bold All done.$reset Wormhole is running on all nodes."
