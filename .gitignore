@@ -1,0 +1,6 @@
+# Local inventory — contains hosts, IPs, URLs, and per-host vars; never commit
+ansible/inventory/hosts.local.yml
+ansible/inventory/host_vars/
+
+# Ansible Vault password file
+.vault-password

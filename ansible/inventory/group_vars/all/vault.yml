@@ -1,0 +1,11 @@
+# Encrypt this file before committing:
+#   ansible-vault encrypt inventory/group_vars/all/vault.yml
+#
+# Edit after encrypting:
+#   ansible-vault edit inventory/group_vars/all/vault.yml
+
+vault_tailscale_auth_key: "REPLACE_WITH_TAILSCALE_AUTH_KEY"
+
+# Shared secret authenticating Node 1 to the Hysteria2 server on Node 2.
+# Generate with: openssl rand -base64 32
+vault_hysteria2_password: "REPLACE_WITH_STRONG_RANDOM_PASSWORD"

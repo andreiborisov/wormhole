@@ -1,0 +1,11 @@
+---
+# Full provisioning: installs Docker, generates TLS certs, and deploys
+# sing-box on all nodes.
+#
+# Usage:
+#   ansible-playbook site.yml --ask-vault-pass
+
+- name: Provision all nodes
+  hosts: all
+  roles:
+    - wormhole

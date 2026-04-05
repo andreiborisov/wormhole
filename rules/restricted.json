@@ -1,0 +1,19 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "amnezia.org",
+        "anthropic.com",
+        "chatgpt.com",
+        "claude.ai",
+        "claude.com",
+        "etsy.com",
+        "headspace.com",
+        "meduza.io",
+        "openai.com",
+        "sofi.com"
+      ]
+    }
+  ]
+}

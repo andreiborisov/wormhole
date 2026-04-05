@@ -1,0 +1,12 @@
+log_level: "warn"
+
+fakeip_inet4_range: "198.18.0.0/15"
+fakeip_inet6_range: "fc00::/18"
+
+# DNS queries for routed domains go through the Hysteria2 tunnel so they
+# always resolve correctly regardless of wormhole-ru's network restrictions.
+dns_upstream_server: "1.1.1.1"
+dns_upstream_port: 853
+
+# Hysteria2 listen port on wormhole-fi. UDP 443 is least likely to be filtered.
+hysteria2_port: 443

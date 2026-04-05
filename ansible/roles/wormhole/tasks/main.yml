@@ -1,0 +1,72 @@
+---
+- name: Install Docker, Docker Compose, and Python cryptography library
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-plugin
+      - python3-cryptography
+    state: present
+    update_cache: true
+
+- name: Ensure Docker service is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ deploy_dir }}/sing-box/data"
+    - "{{ deploy_dir }}/sing-box/tls"
+
+# ── TLS certificate (server-side, each node generates its own) ───────────────
+
+- name: Generate TLS private key
+  community.crypto.openssl_privatekey:
+    path: "{{ deploy_dir }}/sing-box/tls/key.pem"
+    type: RSA
+    size: 4096
+    mode: "0600"
+
+- name: Generate certificate signing request
+  community.crypto.openssl_csr:
+    path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
+    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
+    common_name: "{{ ansible_host }}"
+    subject_alt_name:
+      - "IP:{{ ansible_host }}"
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+
+- name: Generate self-signed TLS certificate
+  community.crypto.x509_certificate:
+    path: "{{ deploy_dir }}/sing-box/tls/cert.pem"
+    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
+    csr_path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+
+# ── Config and service ────────────────────────────────────────────────────────
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.copy:
+    src: docker-compose.yml
+    dest: "{{ deploy_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Deploy sing-box config
+  ansible.builtin.template:
+    src: sing-box/config.json.j2
+    dest: "{{ deploy_dir }}/sing-box/config.json"
+    mode: "0644"
+  notify: Restart sing-box
+
+- name: Start sing-box
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_dir }}"
+    state: present

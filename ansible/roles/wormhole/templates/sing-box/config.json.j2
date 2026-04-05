@@ -1,0 +1,128 @@
+{
+  "dns": {
+    "final": "upstream",
+    "independent_cache": true,
+    "rules": [
+      {
+        "query_type": ["HTTPS"],
+        "action": "reject",
+        "reject_code": 3
+      },
+      {
+        "rule_set": ["routed-domains"],
+        "query_type": ["A", "AAAA"],
+        "server": "fakeip"
+      }
+    ],
+    "servers": [
+      {
+        "type": "tls",
+        "tag": "upstream",
+        "server": "{{ dns_upstream_server }}",
+        "server_port": {{ dns_upstream_port }},
+        "detour": "{{ 'tunnel' if restricted else 'direct' }}"
+      },
+      {
+        "type": "fakeip",
+        "tag": "fakeip",
+        "inet4_range": "{{ fakeip_inet4_range }}",
+        "inet6_range": "{{ fakeip_inet6_range }}"
+      }
+    ]
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "store_fakeip": true
+    }
+  },
+  "endpoints": [
+    {
+      "advertise_routes": {{ [fakeip_inet4_range, fakeip_inet6_range] | to_json }},
+{% if vault_tailscale_auth_key | default('') %}
+      "auth_key": "{{ vault_tailscale_auth_key }}",
+{% endif %}
+      "ephemeral": false,
+      "hostname": "{{ tailscale_hostname }}",
+      "state_directory": "/var/lib/sing-box/tailscale",
+      "tag": "ts-ep",
+      "type": "tailscale"
+    }
+  ],
+  "inbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "::",
+      "listen_port": {{ hysteria2_port }},
+      "users": [
+        { "password": "{{ vault_hysteria2_password }}" }
+      ],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "/etc/sing-box/tls/cert.pem",
+        "key_path": "/etc/sing-box/tls/key.pem"
+      }
+    }
+  ],
+  "log": {
+    "level": "{{ log_level }}"
+  },
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    },
+{% for p in peers %}
+    {
+      "tag": "peer-{{ p }}",
+      "type": "hysteria2",
+      "server": "{{ hostvars[p]['ansible_host'] }}",
+      "server_port": {{ hysteria2_port }},
+      "password": "{{ vault_hysteria2_password }}",
+      "tls": {
+        "enabled": true,
+        "insecure": true
+      }
+    },
+{% endfor %}
+    {
+      "tag": "tunnel",
+      "type": "urltest",
+      "outbounds": [{% for p in peers %}"peer-{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+      "url": "https://cp.cloudflare.com",
+      "interval": "3m"
+    }
+  ],
+  "route": {
+    "rule_set": [
+      {
+        "tag": "routed-domains",
+        "type": "remote",
+        "format": "source",
+        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
+        "download_detour": "{{ 'tunnel' if restricted else 'direct' }}",
+        "update_interval": "15m"
+      }
+    ],
+    "default_domain_resolver": {
+      "server": "upstream"
+    },
+    "final": "direct",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": ["dns"],
+        "action": "hijack-dns"
+      },
+      {
+        "rule_set": ["routed-domains"],
+        "network": "tcp",
+        "action": "route",
+        "outbound": "tunnel"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+# Copy this file to hosts.local.yml (gitignored) and fill in real values.
+#
+#   cp hosts.local.yml.example hosts.local.yml
+
+all:
+  vars:
+    rule_set_base_url: "https://raw.githubusercontent.com/YOUR_ORG/YOUR_REPO/main/rules"
+    ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+  hosts:
+    wormhole-ru:
+      ansible_host: YOUR_WORMHOLE_RU_IP
+      ansible_user: root
+      tailscale_hostname: "wormhole-ru"
+      peers:
+        - "wormhole-fi"
+      restricted: true
+    wormhole-fi:
+      ansible_host: YOUR_WORMHOLE_FI_IP
+      ansible_user: root
+      tailscale_hostname: "wormhole-fi"
+      peers:
+        - "wormhole-ru"
+      restricted: false
