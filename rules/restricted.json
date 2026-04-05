@@ -26,7 +26,12 @@
       "ip_cidr": ["66.22.192.0/18"]
     },
     {
-      "domain_suffix": ["diabrowser.engineering", "linear.app", "raycast.com"]
+      "domain_suffix": [
+        "bitnami.com",
+        "diabrowser.engineering",
+        "linear.app",
+        "raycast.com"
+      ]
     },
     {
       "domain_suffix": [
