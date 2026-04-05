@@ -1,3 +1,6 @@
+{%- set node_idx = groups['all'].index(inventory_hostname) -%}
+{%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
+{%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {
   "dns": {
     "final": "upstream",
@@ -19,8 +22,8 @@
         "type": "tls",
         "tag": "upstream",
         "server": "{{ dns_upstream_server }}",
-        "server_port": {{ dns_upstream_port }},
-        "detour": "{{ 'tunnel' if restricted else 'direct' }}"
+        "server_port": {{ dns_upstream_port }}{% if restricted %},
+        "detour": "tunnel"{% endif %}
       },
       {
         "type": "fakeip",
@@ -100,8 +103,8 @@
         "tag": "routed-domains",
         "type": "remote",
         "format": "source",
-        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
-        "download_detour": "{{ 'tunnel' if restricted else 'direct' }}",
+        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",{% if restricted %}
+        "download_detour": "tunnel",{% endif %}
         "update_interval": "15m"
       }
     ],

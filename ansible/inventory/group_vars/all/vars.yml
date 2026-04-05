@@ -1,8 +1,5 @@
 log_level: "warn"
 
-fakeip_inet4_range: "198.18.0.0/15"
-fakeip_inet6_range: "fc00::/18"
-
 # DNS queries for routed domains go through the Hysteria2 tunnel so they
 # always resolve correctly regardless of wormhole-ru's network restrictions.
 dns_upstream_server: "1.1.1.1"
