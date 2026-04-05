@@ -3,16 +3,53 @@
   "rules": [
     {
       "domain_suffix": [
-        "amnezia.org",
         "anthropic.com",
         "chatgpt.com",
         "claude.ai",
         "claude.com",
-        "etsy.com",
-        "headspace.com",
-        "meduza.io",
-        "openai.com",
-        "sofi.com"
+        "grammarly.com",
+        "openai.com"
+      ]
+    },
+    {
+      "domain_suffix": ["sofi.com"]
+    },
+    {
+      "domain_suffix": ["linear.app"]
+    },
+    {
+      "domain_suffix": [
+        "dnskp.cc",
+        "kino.pub",
+        "rutor.is",
+        "rutracker.cc",
+        "rutracker.org"
+      ]
+    },
+    {
+      "domain_suffix": ["meduza.io", "zona.media"]
+    },
+    {
+      "domain_suffix": ["adguard.com", "amnezia.org", "torproject.org"]
+    },
+    {
+      "domain_suffix": ["etsy.com", "nike.com", "uniqlo.com"]
+    },
+    {
+      "domain_suffix": ["cdninstagram.com", "instagram.com"]
+    },
+    {
+      "domain_suffix": ["headspace.com"]
+    },
+    {
+      "domain_suffix": [
+        "ggpht.com",
+        "googlevideo.com",
+        "googleapis.com",
+        "googleusercontent.com",
+        "youtu.be",
+        "youtube.com",
+        "ytimg.com"
       ]
     }
   ]
