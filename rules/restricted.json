@@ -43,7 +43,7 @@
       "domain_suffix": ["meduza.io", "zona.media"]
     },
     {
-      "domain_suffix": ["adguard.com", "amnezia.org", "torproject.org"]
+      "domain_suffix": ["adguard.com", "amnezia.org", "tailscale.com", "torproject.org"]
     },
     {
       "domain_suffix": ["etsy.com", "nike.com", "uniqlo.com"]
