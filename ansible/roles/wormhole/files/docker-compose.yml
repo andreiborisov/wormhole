@@ -1,7 +1,7 @@
 services:
 
   sing-box:
-          image: ghcr.io/sagernet/sing-box:v1.13.5
+    image: ghcr.io/sagernet/sing-box:v1.13.5
     container_name: sing-box
     cap_add:
       - NET_ADMIN
