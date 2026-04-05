@@ -1,6 +1,9 @@
 {%- set node_idx = groups['all'].index(inventory_hostname) -%}
 {%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
 {%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
+{%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
+{%- set _ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
+{%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _ip_cidrs -%}
 {
   "dns": {
     "final": "upstream",
@@ -41,7 +44,7 @@
   },
   "endpoints": [
     {
-      "advertise_routes": {{ [fakeip_inet4_range, fakeip_inet6_range] | to_json }},
+      "advertise_routes": {{ advertise_routes | to_json }},
 {% if vault_tailscale_auth_key | default('') %}
       "auth_key": "{{ vault_tailscale_auth_key }}",
 {% endif %}
