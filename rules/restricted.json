@@ -111,6 +111,8 @@
         "googleusercontent.com",
         "youtu.be",
         "youtube.com",
+        "youtube.googleapis.com",
+        "youtubei.googleapis.com",
         "ytimg.com"
       ]
     }
