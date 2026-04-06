@@ -97,6 +97,9 @@
       ]
     },
     {
+      "domain_suffix": ["wa.me", "whatsapp.com", "whatsapp.net"]
+    },
+    {
       "domain_suffix": ["headspace.com"]
     },
     {
