@@ -23,3 +23,5 @@ all:
         - "wormhole-ru"
       restricted: false
       dns_local_server: "1.1.1.1"
+      local_domains:
+        - "retn.net"

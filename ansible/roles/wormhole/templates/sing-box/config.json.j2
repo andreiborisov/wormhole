@@ -5,6 +5,7 @@
 {%- set _ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _ip_cidrs -%}
 {%- set tunnel_dns = hostvars[peers[0]]['dns_local_server'] -%}
+{%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='local_domains', default=[]) | flatten -%}
 {
   "dns": {
     "final": "upstream-local",
@@ -23,7 +24,16 @@
       {
         "rule_set": ["routed-domains"],
         "server": "upstream-tunnel"
-      }
+      }{% if peer_domain_suffixes %},
+      {
+        "domain_suffix": {{ peer_domain_suffixes | to_json }},
+        "query_type": ["A", "AAAA"],
+        "server": "fakeip"
+      },
+      {
+        "domain_suffix": {{ peer_domain_suffixes | to_json }},
+        "server": "upstream-tunnel"
+      }{% endif %}
     ],
     "servers": [
       {
@@ -136,7 +146,12 @@
         "rule_set": ["routed-domains"],
         "action": "route",
         "outbound": "tunnel"
-      }
+      }{% if peer_domain_suffixes %},
+      {
+        "domain_suffix": {{ peer_domain_suffixes | to_json }},
+        "action": "route",
+        "outbound": "tunnel"
+      }{% endif %}
     ]
   }
 }
