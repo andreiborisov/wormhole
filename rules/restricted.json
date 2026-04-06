@@ -35,6 +35,9 @@
       ]
     },
     {
+      "domain_suffix": ["facetime.apple.com"]
+    },
+    {
       "domain_suffix": ["cloudfront.net"]
     },
     {
