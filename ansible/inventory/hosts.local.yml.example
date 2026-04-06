@@ -14,6 +14,7 @@ all:
       peers:
         - "wormhole-fi"
       restricted: true
+      dns_local_server: "77.88.8.8"
     wormhole-fi:
       ansible_host: YOUR_WORMHOLE_FI_IP
       ansible_user: root
@@ -21,3 +22,4 @@ all:
       peers:
         - "wormhole-ru"
       restricted: false
+      dns_local_server: "1.1.1.1"

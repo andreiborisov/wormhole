@@ -4,9 +4,10 @@
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
 {%- set _ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _ip_cidrs -%}
+{%- set tunnel_dns = hostvars[peers[0]]['dns_local_server'] -%}
 {
   "dns": {
-    "final": "upstream",
+    "final": "upstream-local",
     "independent_cache": true,
     "rules": [
       {
@@ -18,15 +19,23 @@
         "rule_set": ["routed-domains"],
         "query_type": ["A", "AAAA"],
         "server": "fakeip"
+      },
+      {
+        "rule_set": ["routed-domains"],
+        "server": "upstream-tunnel"
       }
     ],
     "servers": [
       {
-        "type": "tls",
-        "tag": "upstream",
-        "server": "{{ dns_upstream_server }}",
-        "server_port": {{ dns_upstream_port }}{% if restricted %},
-        "detour": "tunnel"{% endif %}
+        "type": "udp",
+        "tag": "upstream-tunnel",
+        "server": "{{ tunnel_dns }}",
+        "detour": "tunnel"
+      },
+      {
+        "type": "udp",
+        "tag": "upstream-local",
+        "server": "{{ dns_local_server }}"
       },
       {
         "type": "fakeip",
@@ -106,13 +115,13 @@
         "tag": "routed-domains",
         "type": "remote",
         "format": "source",
-        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",{% if restricted %}
-        "download_detour": "tunnel",{% endif %}
+        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
+        "download_detour": "tunnel",
         "update_interval": "15m"
       }
     ],
     "default_domain_resolver": {
-      "server": "upstream"
+      "server": "upstream-local"
     },
     "final": "direct",
     "rules": [
