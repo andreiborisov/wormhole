@@ -4,3 +4,6 @@ ansible/inventory/host_vars/
 
 # Ansible Vault password file
 .vault-password
+
+# Make sure to include VS Code settings
+!.vscode
