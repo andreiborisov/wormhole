@@ -17,5 +17,30 @@ services:
     volumes:
       - ./sing-box/config.json:/etc/sing-box/config.json:ro
       - ./sing-box/data:/var/lib/sing-box
-      - ./sing-box/tls:/etc/sing-box/tls:ro
+    depends_on:
+      amneziawg:
+        condition: service_healthy
+    restart: unless-stopped
+
+  amneziawg:
+    build:
+      context: ./awg/build
+    image: amneziawg-local
+    container_name: amneziawg
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    network_mode: host
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ./awg/awg0.conf:/opt/amnezia/awg/awg0.conf:ro
+      - ./awg/start.sh:/opt/amnezia/start.sh
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /sys/class/net/awg0"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
     restart: unless-stopped

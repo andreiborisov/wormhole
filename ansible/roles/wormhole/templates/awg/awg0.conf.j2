@@ -1,0 +1,38 @@
+{%- set node_idx = groups['all'].index(inventory_hostname) -%}
+{%- set awg_tunnel_ip = awg_tunnel_prefix ~ '.' ~ (node_idx + 1) -%}
+[Interface]
+PrivateKey = {{ awg_private_key }}
+Address = {{ awg_tunnel_ip }}/30
+ListenPort = {{ awg_port }}
+Table = off
+Jc = {{ awg_jc }}
+Jmin = {{ awg_jmin }}
+Jmax = {{ awg_jmax }}
+S1 = {{ awg_s1 }}
+S2 = {{ awg_s2 }}
+S3 = {{ awg_s3 }}
+S4 = {{ awg_s4 }}
+H1 = {{ awg_h1 }}
+H2 = {{ awg_h2 }}
+H3 = {{ awg_h3 }}
+H4 = {{ awg_h4 }}
+{% if awg_i1 | default('') %}I1 = {{ awg_i1 }}
+{% endif %}
+{% if awg_i2 | default('') %}I2 = {{ awg_i2 }}
+{% endif %}
+{% if awg_i3 | default('') %}I3 = {{ awg_i3 }}
+{% endif %}
+{% if awg_i4 | default('') %}I4 = {{ awg_i4 }}
+{% endif %}
+{% if awg_i5 | default('') %}I5 = {{ awg_i5 }}
+{% endif %}
+{% for p in peers %}
+{%- set peer_idx = groups['all'].index(p) -%}
+{%- set peer_tunnel_ip = awg_tunnel_prefix ~ '.' ~ (peer_idx + 1) -%}
+[Peer]
+PublicKey = {{ hostvars[p]['awg_public_key'] }}
+PresharedKey = {{ vault_awg_psk }}
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = {{ hostvars[p]['ansible_host'] }}:{{ awg_port }}
+PersistentKeepalive = 25
+{% endfor %}

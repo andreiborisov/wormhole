@@ -39,8 +39,8 @@
       {
         "type": "udp",
         "tag": "upstream-tunnel",
-        "server": "{{ tunnel_dns }}",
-        "detour": "tunnel"
+        "server": "{{ tunnel_dns }}"{% if restricted %},
+        "detour": "tunnel"{% endif %}
       },
       {
         "type": "udp",
@@ -75,22 +75,7 @@
       "type": "tailscale"
     }
   ],
-  "inbounds": [
-    {
-      "type": "hysteria2",
-      "tag": "tunnel-in",
-      "listen": "::",
-      "listen_port": {{ hysteria2_port }},
-      "users": [
-        { "password": "{{ vault_hysteria2_password }}" }
-      ],
-      "tls": {
-        "enabled": true,
-        "certificate_path": "/etc/sing-box/tls/cert.pem",
-        "key_path": "/etc/sing-box/tls/key.pem"
-      }
-    }
-  ],
+  "inbounds": [],
   "log": {
     "level": "{{ log_level }}"
   },
@@ -98,25 +83,12 @@
     {
       "tag": "direct",
       "type": "direct"
-    },
-{% for p in peers %}
-    {
-      "tag": "peer-{{ p }}",
-      "type": "hysteria2",
-      "server": "{{ hostvars[p]['ansible_host'] }}",
-      "server_port": {{ hysteria2_port }},
-      "password": "{{ vault_hysteria2_password }}",
-      "tls": {
-        "enabled": true,
-        "insecure": true
-      }
-    },
-{% endfor %}
+    }{% if restricted %},
     {
       "tag": "tunnel",
-      "type": "selector",
-      "outbounds": [{% for p in peers %}"peer-{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
-    }
+      "type": "direct",
+      "routing_mark": 51820
+    }{% endif %}
   ],
   "route": {
     "rule_set": [
@@ -134,24 +106,18 @@
     "final": "direct",
     "rules": [
       {
-        "inbound": ["tunnel-in"],
-        "port": [53],
-        "action": "route",
-        "outbound": "direct"
-      },
-      {
         "port": [53],
         "action": "hijack-dns"
       },
       {
         "rule_set": ["route-rules"],
         "action": "route",
-        "outbound": "tunnel"
+        "outbound": "{{ 'tunnel' if restricted else 'direct' }}"
       }{% if peer_domain_suffixes %},
       {
         "domain_suffix": {{ peer_domain_suffixes | to_json }},
         "action": "route",
-        "outbound": "tunnel"
+        "outbound": "{{ 'tunnel' if restricted else 'direct' }}"
       }{% endif %}
     ]
   }

@@ -1,0 +1,35 @@
+#!/bin/sh
+set -e
+echo "Starting AmneziaWG"
+
+# Load the AmneziaWG kernel module if it is installed but not yet loaded.
+# The container needs cap_add: SYS_MODULE and /lib/modules mounted for this.
+modprobe amneziawg 2>/dev/null || true
+
+# Idempotent: bring down the interface if it is already up from a previous run
+awg-quick down /opt/amnezia/awg/awg0.conf 2>/dev/null || true
+
+awg-quick up /opt/amnezia/awg/awg0.conf
+
+# Add routes for peer tunnel IPs so return traffic can reach them via awg0
+{% for p in peers %}
+{%- set peer_idx = groups['all'].index(p) -%}
+{%- set peer_tunnel_ip = awg_tunnel_prefix ~ '.' ~ (peer_idx + 1) -%}
+ip route add {{ peer_tunnel_ip }}/32 dev awg0 2>/dev/null || true
+{% endfor %}
+# Route traffic marked with fwmark 51820 through the AWG tunnel (used by sing-box)
+ip rule add fwmark 51820 table 51820 2>/dev/null || true
+ip route add 0.0.0.0/0 dev awg0 table 51820 2>/dev/null || true
+
+# Allow traffic on and through the AWG interface
+iptables -A INPUT  -i awg0 -j ACCEPT
+iptables -A FORWARD -i awg0 -j ACCEPT
+iptables -A OUTPUT  -o awg0 -j ACCEPT
+
+# Allow return traffic for established connections forwarded from AWG
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# NAT traffic from AWG peers so it exits through this node's internet interface
+iptables -t nat -A POSTROUTING -s {{ awg_tunnel_prefix }}.0/30 ! -o awg0 -j MASQUERADE
+
+tail -f /dev/null

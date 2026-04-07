@@ -1,2 +1,31 @@
 log_level: 'warn'
-hysteria2_port: 443
+
+# AmneziaWG transport
+awg_port: 51820
+awg_tunnel_prefix: '10.99.0'
+
+# Obfuscation parameters — must be identical on every node.
+# Change these from the defaults to make your traffic fingerprint unique.
+# H1-H4 must be non-overlapping values in range [1, 65535].
+awg_jc: 5
+awg_jmin: 50
+awg_jmax: 1000
+awg_s1: 34
+awg_s2: 47
+awg_s3: 50
+awg_s4: 39
+awg_h1: 1582
+awg_h2: 785
+awg_h3: 342
+awg_h4: 1096
+
+# Protocol signature junk packets (AmneziaWG 2.0).
+# Set I1-I5 to a hex-encoded real protocol packet (e.g. a QUIC Initial) to
+# disguise the VPN handshake as that protocol. Capture one with Wireshark and
+# format as: <b 0xHEXSTRING>
+# See: https://docs.amnezia.org/documentation/instructions/new-amneziawg-selfhosted
+awg_i1: ''
+awg_i2: ''
+awg_i3: ''
+awg_i4: ''
+awg_i5: ''

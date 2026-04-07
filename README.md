@@ -6,9 +6,9 @@
 
 ## 🧠 How it works
 
-Wormhole runs [sing-box](https://sing-box.sagernet.org) on two or more nodes:
+Wormhole runs [sing-box](https://sing-box.sagernet.org) on two or more nodes, with [AmneziaWG](https://github.com/amnezia-vpn/amneziawg-go) providing the encrypted, obfuscated transport between them:
 
-- **Restricted nodes** — sit inside censored networks. They intercept DNS, return fake IPs for proxied domains, and forward matching traffic through an encrypted censorship-resistant tunnel to their peers.
+- **Restricted nodes** — sit inside censored networks. They intercept DNS, return fake IPs for proxied domains, and forward matching traffic to their peers over an AmneziaWG tunnel that resists deep packet inspection.
 - **Unrestricted nodes** — sit in open networks. They receive tunnel traffic and send it out to the internet.
 
 Clients connect to the Tailscale network and route through the nearest restricted node transparently — no per-app configuration needed.
@@ -42,12 +42,14 @@ Edit `hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and the
 
 ### 3. Fill in secrets
 
-Edit `ansible/inventory/group_vars/all/vault.yml` with a real Tailscale auth key and a strong Hysteria2 password:
+Edit `ansible/inventory/group_vars/all/vault.yml` with a real Tailscale auth key and a strong AmneziaWG pre-shared key:
+
+```yaml
+vault_tailscale_auth_key: "tskey-auth-..."
+vault_awg_psk: "<output of: docker run --rm amneziavpn/amneziawg-go:latest awg genpsk>"
+```
 
 ```fish
-# Generate a password:
-openssl rand -base64 32
-
 # Get a Tailscale auth key:
 # https://login.tailscale.com/admin/settings/keys
 ```
@@ -103,7 +105,9 @@ ansible/
       vars.yml                  # Shared config
       vault.yml                 # Encrypted secrets
   roles/wormhole/
-    tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
-    templates/sing-box/         # Jinja2 config template
-    files/docker-compose.yml    # Container definition
+    tasks/main.yml              # Installs Docker, generates AWG keys, deploys services
+    templates/sing-box/         # Jinja2 config template for sing-box
+    templates/awg/              # Jinja2 templates for AmneziaWG config and start script
+    files/docker-compose.yml    # Container definitions (sing-box + amneziawg)
+    files/awg/Dockerfile        # AmneziaWG container image
 ```

@@ -2,5 +2,15 @@
 - name: Restart sing-box
   community.docker.docker_compose_v2:
     project_src: "{{ deploy_dir }}"
+    services:
+      - sing-box
+    state: present
+    recreate: always
+
+- name: Restart amneziawg
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_dir }}"
+    services:
+      - amneziawg
     state: present
     recreate: always

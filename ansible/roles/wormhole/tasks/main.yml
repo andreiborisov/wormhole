@@ -30,14 +30,13 @@
       {{ ansible_distribution_release }} stable
     state: present
 
-- name: Install Docker, Docker Compose, and Python cryptography library
+- name: Install Docker and Docker Compose
   ansible.builtin.apt:
     name:
       - docker-ce
       - docker-ce-cli
       - containerd.io
       - docker-compose-plugin
-      - python3-cryptography
     state: present
     update_cache: true
 
@@ -54,39 +53,12 @@
     mode: "0755"
   loop:
     - "{{ deploy_dir }}/sing-box/data"
-    - "{{ deploy_dir }}/sing-box/tls"
-
-# ── TLS certificate (server-side, each node generates its own) ───────────────
-
-- name: Generate TLS private key
-  community.crypto.openssl_privatekey:
-    path: "{{ deploy_dir }}/sing-box/tls/key.pem"
-    type: RSA
-    size: 4096
-    mode: "0600"
-
-- name: Generate certificate signing request
-  community.crypto.openssl_csr:
-    path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
-    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
-    common_name: "{{ ansible_host }}"
-    subject_alt_name:
-      - "IP:{{ ansible_host }}"
-    basic_constraints:
-      - "CA:TRUE"
-    basic_constraints_critical: true
-
-- name: Generate self-signed TLS certificate
-  community.crypto.x509_certificate:
-    path: "{{ deploy_dir }}/sing-box/tls/cert.pem"
-    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
-    csr_path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
-    provider: selfsigned
-    selfsigned_not_after: "+3650d"
+    - "{{ deploy_dir }}/awg"
+    - "{{ deploy_dir }}/awg/build"
 
 # ── Kernel tuning ─────────────────────────────────────────────────────────────
 
-- name: Tune UDP socket buffers for Hysteria2
+- name: Tune kernel for AWG
   ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
@@ -94,8 +66,67 @@
     state: present
     reload: true
   loop:
-    - { name: net.core.rmem_max, value: 16777216 }
-    - { name: net.core.wmem_max, value: 16777216 }
+    - { name: net.ipv4.ip_forward,              value: "1"        }
+    - { name: net.ipv4.conf.all.src_valid_mark, value: "1"        }
+    - { name: net.core.rmem_max,                value: "16777216" }
+    - { name: net.core.wmem_max,                value: "16777216" }
+
+
+# ── AWG Docker image ──────────────────────────────────────────────────────────
+
+- name: Deploy AWG Dockerfile
+  ansible.builtin.copy:
+    src: awg/Dockerfile
+    dest: "{{ deploy_dir }}/awg/build/Dockerfile"
+    mode: "0644"
+
+# ── AWG key generation ────────────────────────────────────────────────────────
+#
+# Keys are generated once on each node, persisted on disk, and then shared
+# between nodes via Ansible facts.  Ansible's default linear strategy
+# guarantees that ALL nodes finish the fact-setting task before any node
+# moves on to config templating, so hostvars[peer]['awg_public_key'] is
+# always available when we render awg0.conf.
+
+- name: Pull AWG base image for key generation
+  community.docker.docker_image:
+    name: amneziavpn/amneziawg-go:latest
+    source: pull
+    state: present
+
+- name: Check if AWG private key already exists
+  ansible.builtin.stat:
+    path: "{{ deploy_dir }}/awg/private.key"
+  register: _awg_key_stat
+
+- name: Generate AWG private key
+  ansible.builtin.shell:
+    cmd: >-
+      docker run --rm amneziavpn/amneziawg-go:latest awg genkey
+      > {{ deploy_dir }}/awg/private.key
+      && chmod 600 {{ deploy_dir }}/awg/private.key
+  when: not _awg_key_stat.stat.exists
+
+- name: Derive AWG public key
+  ansible.builtin.shell:
+    cmd: >-
+      docker run --rm -i amneziavpn/amneziawg-go:latest awg pubkey
+      < {{ deploy_dir }}/awg/private.key
+  register: _awg_public_key_result
+  changed_when: false
+
+- name: Read AWG private key
+  ansible.builtin.slurp:
+    path: "{{ deploy_dir }}/awg/private.key"
+  register: _awg_private_key_b64
+  no_log: true
+
+- name: Set AWG key facts
+  ansible.builtin.set_fact:
+    awg_private_key: "{{ _awg_private_key_b64.content | b64decode | trim }}"
+    awg_public_key: "{{ _awg_public_key_result.stdout | trim }}"
+    awg_tunnel_ip: "{{ awg_tunnel_prefix }}.{{ groups['all'].index(inventory_hostname) + 1 }}"
+  no_log: true
 
 # ── Config and service ────────────────────────────────────────────────────────
 
@@ -105,6 +136,21 @@
     dest: "{{ deploy_dir }}/docker-compose.yml"
     mode: "0644"
 
+- name: Deploy AWG config
+  ansible.builtin.template:
+    src: awg/awg0.conf.j2
+    dest: "{{ deploy_dir }}/awg/awg0.conf"
+    mode: "0600"
+  notify: Restart amneziawg
+  no_log: true
+
+- name: Deploy AWG start script
+  ansible.builtin.template:
+    src: awg/start.sh.j2
+    dest: "{{ deploy_dir }}/awg/start.sh"
+    mode: "0755"
+  notify: Restart amneziawg
+
 - name: Deploy sing-box config
   ansible.builtin.template:
     src: sing-box/config.json.j2
@@ -112,7 +158,7 @@
     mode: "0644"
   notify: Restart sing-box
 
-- name: Start sing-box
+- name: Start services
   community.docker.docker_compose_v2:
     project_src: "{{ deploy_dir }}"
     state: present
