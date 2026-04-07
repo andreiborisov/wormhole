@@ -137,10 +137,13 @@
     "final": "direct",
     "rules": [
       {
-        "action": "sniff"
+        "inbound": ["hy2-in"],
+        "port": [53],
+        "action": "route",
+        "outbound": "direct"
       },
       {
-        "protocol": ["dns"],
+        "port": [53],
         "action": "hijack-dns"
       },
       {
