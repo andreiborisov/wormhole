@@ -114,10 +114,8 @@
 {% endfor %}
     {
       "tag": "tunnel",
-      "type": "urltest",
-      "outbounds": [{% for p in peers %}"peer-{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}],
-      "url": "https://cp.cloudflare.com",
-      "interval": "3m"
+      "type": "selector",
+      "outbounds": [{% for p in peers %}"peer-{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
     }
   ],
   "route": {
