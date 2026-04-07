@@ -1,4 +1,2 @@
-log_level: "warn"
-
-# Hysteria2 listen port on wormhole-fi. UDP 443 is least likely to be filtered.
+log_level: 'warn'
 hysteria2_port: 443
