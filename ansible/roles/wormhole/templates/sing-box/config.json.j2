@@ -2,8 +2,8 @@
 {%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
 {%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
-{%- set _ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
-{%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _ip_cidrs -%}
+{%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
+{%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
 {%- set tunnel_dns = hostvars[peers[0]]['dns_local_server'] -%}
 {%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='local_domains', default=[]) | flatten -%}
 {
@@ -17,12 +17,12 @@
         "reject_code": 3
       },
       {
-        "rule_set": ["routed-domains"],
+        "rule_set": ["route-rules"],
         "query_type": ["A", "AAAA"],
         "server": "fakeip"
       },
       {
-        "rule_set": ["routed-domains"],
+        "rule_set": ["route-rules"],
         "server": "upstream-tunnel"
       }{% if peer_domain_suffixes %},
       {
@@ -123,7 +123,7 @@
   "route": {
     "rule_set": [
       {
-        "tag": "routed-domains",
+        "tag": "route-rules",
         "type": "remote",
         "format": "source",
         "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
@@ -147,7 +147,7 @@
         "action": "hijack-dns"
       },
       {
-        "rule_set": ["routed-domains"],
+        "rule_set": ["route-rules"],
         "action": "route",
         "outbound": "tunnel"
       }{% if peer_domain_suffixes %},
