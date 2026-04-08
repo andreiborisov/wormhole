@@ -28,10 +28,13 @@
     {
       "domain_suffix": [
         "bitnami.com",
+        "cursor.sh",
         "diabrowser.engineering",
+        "folivora.ai",
         "linear.app",
         "raycast.com",
-        "raycast-releases.com"
+        "raycast-releases.com",
+        "rogueamoeba.com"
       ]
     },
     {
