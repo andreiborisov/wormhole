@@ -78,7 +78,7 @@
   "inbounds": [
     {
       "type": "hysteria2",
-      "tag": "hy2-in",
+      "tag": "tunnel-in",
       "listen": "::",
       "listen_port": {{ hysteria2_port }},
       "users": [
@@ -134,7 +134,7 @@
     "final": "direct",
     "rules": [
       {
-        "inbound": ["hy2-in"],
+        "inbound": ["tunnel-in"],
         "port": [53],
         "action": "route",
         "outbound": "direct"
