@@ -15,6 +15,9 @@
       "domain_suffix": ["sofi.com"]
     },
     {
+      "domain_suffix": ["bsky.app"]
+    },
+    {
       "domain_suffix": [
         "discord.com",
         "discord.gg",
