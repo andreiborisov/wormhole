@@ -251,6 +251,9 @@
       "domain_suffix": ["sofi.com"]
     },
     {
+      "domain_suffix": ["opendesign.com", "openifcviewer.com"]
+    },
+    {
       "domain_suffix": ["bsky.app"]
     },
     {
