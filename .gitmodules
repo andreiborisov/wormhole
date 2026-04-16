@@ -1,0 +1,3 @@
+[submodule "references/amnezia-client"]
+	path = references/amnezia-client
+	url = git@github.com:amnezia-vpn/amnezia-client.git
