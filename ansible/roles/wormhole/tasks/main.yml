@@ -13,21 +13,19 @@
   ansible.builtin.file:
     path: /etc/apt/keyrings
     state: directory
-    mode: "0755"
+    mode: '0755'
 
 - name: Add Docker GPG key
   ansible.builtin.get_url:
-    url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+    url: 'https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg'
     dest: /etc/apt/keyrings/docker.asc
-    mode: "0644"
+    mode: '0644'
 
 - name: Add Docker apt repository
   ansible.builtin.apt_repository:
     repo: >-
-      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}
-      signed-by=/etc/apt/keyrings/docker.asc]
-      https://download.docker.com/linux/{{ ansible_distribution | lower }}
-      {{ ansible_distribution_release }} stable
+      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
+
     state: present
 
 - name: Install Docker, Docker Compose, and Python cryptography library
@@ -49,70 +47,57 @@
 
 - name: Create directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: '{{ item }}'
     state: directory
-    mode: "0755"
+    mode: '0755'
   loop:
-    - "{{ deploy_dir }}/sing-box/data"
-    - "{{ deploy_dir }}/sing-box/tls"
+    - '{{ deploy_dir }}/sing-box/data'
+    - '{{ deploy_dir }}/sing-box/tls'
 
 # ── TLS certificate (server-side, each node generates its own) ───────────────
 
 - name: Generate TLS private key
   community.crypto.openssl_privatekey:
-    path: "{{ deploy_dir }}/sing-box/tls/key.pem"
+    path: '{{ deploy_dir }}/sing-box/tls/key.pem'
     type: RSA
     size: 4096
-    mode: "0600"
+    mode: '0600'
 
 - name: Generate certificate signing request
   community.crypto.openssl_csr:
-    path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
-    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
-    common_name: "{{ ansible_host }}"
+    path: '{{ deploy_dir }}/sing-box/tls/csr.pem'
+    privatekey_path: '{{ deploy_dir }}/sing-box/tls/key.pem'
+    common_name: '{{ ansible_host }}'
     subject_alt_name:
-      - "IP:{{ ansible_host }}"
+      - 'IP:{{ ansible_host }}'
     basic_constraints:
-      - "CA:TRUE"
+      - 'CA:TRUE'
     basic_constraints_critical: true
 
 - name: Generate self-signed TLS certificate
   community.crypto.x509_certificate:
-    path: "{{ deploy_dir }}/sing-box/tls/cert.pem"
-    privatekey_path: "{{ deploy_dir }}/sing-box/tls/key.pem"
-    csr_path: "{{ deploy_dir }}/sing-box/tls/csr.pem"
+    path: '{{ deploy_dir }}/sing-box/tls/cert.pem'
+    privatekey_path: '{{ deploy_dir }}/sing-box/tls/key.pem'
+    csr_path: '{{ deploy_dir }}/sing-box/tls/csr.pem'
     provider: selfsigned
-    selfsigned_not_after: "+3650d"
-
-# ── Kernel tuning ─────────────────────────────────────────────────────────────
-
-- name: Tune UDP socket buffers for Hysteria2
-  ansible.posix.sysctl:
-    name: "{{ item.name }}"
-    value: "{{ item.value }}"
-    sysctl_set: true
-    state: present
-    reload: true
-  loop:
-    - { name: net.core.rmem_max, value: 16777216 }
-    - { name: net.core.wmem_max, value: 16777216 }
+    selfsigned_not_after: '+3650d'
 
 # ── Config and service ────────────────────────────────────────────────────────
 
 - name: Deploy docker-compose.yml
   ansible.builtin.copy:
     src: docker-compose.yml
-    dest: "{{ deploy_dir }}/docker-compose.yml"
-    mode: "0644"
+    dest: '{{ deploy_dir }}/docker-compose.yml'
+    mode: '0644'
 
 - name: Deploy sing-box config
   ansible.builtin.template:
     src: sing-box/config.json.j2
-    dest: "{{ deploy_dir }}/sing-box/config.json"
-    mode: "0644"
+    dest: '{{ deploy_dir }}/sing-box/config.json'
+    mode: '0644'
   notify: Restart sing-box
 
 - name: Start sing-box
   community.docker.docker_compose_v2:
-    project_src: "{{ deploy_dir }}"
+    project_src: '{{ deploy_dir }}'
     state: present
