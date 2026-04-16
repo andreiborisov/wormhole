@@ -3,7 +3,7 @@ services:
   amneziawg:
     build:
       context: ./amneziawg/build
-    image: amneziawg:latest
+    image: amneziawg:{{ amneziawg_image_tag }}
     container_name: amneziawg
     cap_add:
       - NET_ADMIN
@@ -54,7 +54,7 @@ services:
     restart: unless-stopped
 
   sing-box:
-    image: ghcr.io/sagernet/sing-box:v1.13.8
+    image: ghcr.io/sagernet/sing-box:{{ sing_box_image_tag }}
     container_name: sing-box
     depends_on:
       amneziawg:

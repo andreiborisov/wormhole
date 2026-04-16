@@ -1,2 +1,4 @@
 log_level: 'warn'
 hysteria2_port: 443
+sing_box_image_tag: 'v1.13.8'
+amneziawg_image_tag: 'latest'

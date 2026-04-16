@@ -1,4 +1,4 @@
-FROM amneziavpn/amneziawg-go:latest
+FROM amneziavpn/amneziawg-go:{{ amneziawg_image_tag }}
 
 LABEL maintainer="AmneziaVPN"
 
@@ -12,4 +12,3 @@ RUN chmod a+x /opt/amnezia/start.sh
 
 ENTRYPOINT [ "dumb-init", "/opt/amnezia/start.sh" ]
 CMD [ "" ]
-
