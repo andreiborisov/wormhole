@@ -11,6 +11,7 @@ all:
       ansible_host: YOUR_WORMHOLE_RU_IP
       ansible_user: root
       tailscale_hostname: "wormhole-ru"
+      awg_subnet: '10.47.23.0/24'
       peers:
         - "wormhole-fi"
       restricted: true
@@ -19,6 +20,7 @@ all:
       ansible_host: YOUR_WORMHOLE_FI_IP
       ansible_user: root
       tailscale_hostname: "wormhole-fi"
+      awg_subnet: '10.47.24.0/24'
       peers:
         - "wormhole-ru"
       restricted: false
