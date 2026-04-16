@@ -1,27 +1,5 @@
 services:
 
-  sing-box:
-    image: ghcr.io/sagernet/sing-box:v1.13.8
-    container_name: sing-box
-    depends_on:
-      amneziawg:
-        condition: service_started
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    network_mode: "service:amneziawg"
-    command:
-      - -D
-      - /var/lib/sing-box
-      - -C
-      - /etc/sing-box/
-      - run
-    volumes:
-      - ./sing-box/config.json:/etc/sing-box/config.json:ro
-      - ./sing-box/data:/var/lib/sing-box
-    restart: unless-stopped
-
   amneziawg:
     build:
       context: ./amneziawg/build
@@ -67,6 +45,34 @@ services:
       - /lib/modules:/lib/modules:ro
       - ./amneziawg/awg-in.conf:/opt/amnezia/awg/awg-in.conf:ro
       - ./amneziawg/start.sh:/opt/amnezia/start.sh:ro
+    healthcheck:
+      test: ["CMD", "awg", "show", "awg-in"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  sing-box:
+    image: ghcr.io/sagernet/sing-box:v1.13.8
+    container_name: sing-box
+    depends_on:
+      amneziawg:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    network_mode: "service:amneziawg"
+    command:
+      - -D
+      - /var/lib/sing-box
+      - -C
+      - /etc/sing-box/
+      - run
+    volumes:
+      - ./sing-box/config.json:/etc/sing-box/config.json:ro
+      - ./sing-box/data:/var/lib/sing-box
     restart: unless-stopped
 
 networks:
