@@ -1,6 +1,6 @@
 ---
-- name: Restart sing-box
+- name: Restart services
   community.docker.docker_compose_v2:
-    project_src: "{{ deploy_dir }}"
+    project_src: '{{ deploy_dir }}'
     state: present
     recreate: always

@@ -1,14 +1,8 @@
 FROM amneziavpn/amneziawg-go:{{ amneziawg_image_tag }}
 
-LABEL maintainer="AmneziaVPN"
-
 #Install required packages
-RUN apk add --no-cache bash curl dumb-init
-RUN apk --update upgrade --no-cache
+RUN apk add --no-cache \
+  dumb-init \
+  fish
 
-RUN mkdir -p /opt/amnezia
-RUN echo -e "#!/bin/bash\ntail -f /dev/null" > /opt/amnezia/start.sh
-RUN chmod a+x /opt/amnezia/start.sh
-
-ENTRYPOINT [ "dumb-init", "/opt/amnezia/start.sh" ]
-CMD [ "" ]
+ENTRYPOINT [ "dumb-init", "/opt/amnezia/docker-entrypoint.fish" ]

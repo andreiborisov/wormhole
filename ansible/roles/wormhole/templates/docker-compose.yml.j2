@@ -2,7 +2,7 @@ services:
 
   amneziawg:
     build:
-      context: ./amneziawg/build
+      context: ./amneziawg
     image: amneziawg:{{ amneziawg_image_tag }}
     container_name: amneziawg
     cap_add:
@@ -44,7 +44,7 @@ services:
     volumes:
       - /lib/modules:/lib/modules:ro
       - ./amneziawg/awg-in.conf:/opt/amnezia/awg/awg-in.conf:ro
-      - ./amneziawg/start.sh:/opt/amnezia/start.sh:ro
+      - ./amneziawg/docker-entrypoint.fish:/opt/amnezia/docker-entrypoint.fish:ro
     healthcheck:
       test: ["CMD", "awg", "show", "awg-in"]
       interval: 10s
@@ -53,12 +53,33 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  router:
+    build:
+      context: ./router
+    image: router:latest
+    container_name: router
+    network_mode: "service:amneziawg"
+    depends_on:
+      amneziawg:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
+      - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
+    command: ["awg-in"]
+    restart: unless-stopped
+
   sing-box:
     image: ghcr.io/sagernet/sing-box:{{ sing_box_image_tag }}
     container_name: sing-box
     depends_on:
       amneziawg:
         condition: service_healthy
+      router:
+        condition: service_started
     cap_add:
       - NET_ADMIN
     devices:
@@ -73,6 +94,7 @@ services:
     volumes:
       - ./sing-box/config.json:/etc/sing-box/config.json:ro
       - ./sing-box/data:/var/lib/sing-box
+        ./sing-box/tls:/etc/sing-box/tls:ro
     restart: unless-stopped
 
 networks:
