@@ -7,8 +7,10 @@
     state: present
     recreate: always
 
-- name: Reload AWG
-  ansible.builtin.command: >-
-    docker exec amneziawg
-    awg syncconf awg-in /opt/amnezia/awg/awg-in.conf
-  changed_when: false
+- name: Restart amneziawg
+  community.docker.docker_compose_v2:
+    project_src: '{{ deploy_dir }}'
+    services:
+      - amneziawg
+    state: present
+    recreate: always
