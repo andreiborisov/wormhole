@@ -4,10 +4,11 @@
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
 {%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
 {%- set allowed_ips = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
+{%- set _awg_base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%}
 [Interface]
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
-DNS        = {{ hostvars[peers[0]]['dns']['local_server'] }}
+DNS        = {{ _awg_base }}.1
 {% if awg.jc is defined %}
 Jc   = {{ awg.jc }}
 {% endif %}
