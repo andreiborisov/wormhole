@@ -1,3 +1,5 @@
+#!/usr/bin/fish
+
 if test (count $argv) -eq 0
   echo "Usage: docker-entrypoint.fish <interface> [interface2 ...]"
   exit 1

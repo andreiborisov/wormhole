@@ -1,3 +1,5 @@
+#!/usr/bin/fish
+
 function start_amneziawg
   echo "Starting AmneziaWG"
 
