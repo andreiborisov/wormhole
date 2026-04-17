@@ -79,13 +79,13 @@
     {
       "type": "tproxy",
       "tag": "awg-in",
-      "listen": "::",
+      "listen": "0.0.0.0",
       "listen_port": {{ tproxy.port }}
     },
     {
       "type": "hysteria2",
       "tag": "tunnel-in",
-      "listen": "::",
+      "listen": "0.0.0.0",
       "listen_port": {{ hysteria2.port }},
       "users": [
         { "password": "{{ vault_hysteria2_password }}" }
