@@ -21,7 +21,7 @@ all:
       awg:
         subnet: '10.47.23.0/24'
         clients:
-          - name: "my-device"
+          - "my-device"
     wormhole-fi:
       ansible_host: YOUR_WORMHOLE_EU_IP
       ansible_user: root
@@ -37,4 +37,4 @@ all:
       awg:
         subnet: '10.47.24.0/24'
         clients:
-          - name: "my-device"
+          - "my-device"

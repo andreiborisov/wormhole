@@ -1,10 +1,3 @@
-function load_modules
-  echo "Loading modules"
-
-  modprobe tcp_hybla
-  or return 1
-end
-
 function start_amneziawg
   echo "Starting AmneziaWG"
 
@@ -13,6 +6,5 @@ function start_amneziawg
   or return 1
 end
 
-load_modules
-and start_amneziawg
+start_amneziawg
 and sleep infinity

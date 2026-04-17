@@ -1,4 +1,5 @@
 ---
+
 # ── Kernel modules ────────────────────────────────────────────────────────────
 
 - name: Install linux-modules-extra
@@ -14,8 +15,25 @@
     mode: '0644'
 
 - name: Load tcp_hybla now
-  ansible.builtin.command: modprobe tcp_hybla
-  changed_when: false
+  community.general.modprobe:
+    name: tcp_hybla
+    state: present
+
+# ── Host sysctls ──────────────────────────────────────────────────────────────
+
+- name: Tune host sysctls
+  ansible.posix.sysctl:
+    name: '{{ item.name }}'
+    value: '{{ item.value }}'
+    state: present
+    sysctl_file: /etc/sysctl.d/99-wormhole.conf
+    reload: true
+  loop:
+    - { name: net.core.rmem_max,                    value: '67108864'       }
+    - { name: net.core.wmem_max,                    value: '67108864'       }
+    - { name: net.core.netdev_max_backlog,           value: '250000'         }
+    - { name: net.ipv4.tcp_mem,                     value: '25600 51200 102400' }
+    - { name: net.ipv4.tcp_congestion_control,       value: 'hybla'          }
 
 # ── Docker official apt repository ───────────────────────────────────────────
 
@@ -166,34 +184,36 @@
 
 - name: Check if peer private keys exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key'
   loop: '{{ awg.clients | default([]) }}'
   register: _peer_key_stats
   delegate_to: localhost
   become: false
 
-- name: Generate peer private keys via Docker
-  ansible.builtin.shell: >-
-    docker run --rm amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg genkey > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
-
+- name: Generate peer private keys
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64, os
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    key = X25519PrivateKey.generate()
+    print(base64.b64encode(key.private_bytes_raw()).decode())
+    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
+    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
   loop: '{{ _peer_key_stats.results }}'
   when: not item.stat.exists
   no_log: true
   delegate_to: localhost
   become: false
 
-- name: Set permissions on peer private keys
-  ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
-    mode: '0600'
-  loop: '{{ awg.clients | default([]) }}'
-  delegate_to: localhost
-  become: false
-
-- name: Derive peer public keys via Docker
-  ansible.builtin.shell: >-
-    docker run --rm -i amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg pubkey < {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key
-
+- name: Derive peer public keys
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key').read().strip())
+    pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+    print(base64.b64encode(pub).decode())
+    "
   loop: '{{ awg.clients | default([]) }}'
   register: _peer_pubkeys
   changed_when: false
@@ -206,7 +226,7 @@
       {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg.clients | default([])) | length) -%}
         {%- set peer = (awg.clients | default([]))[i] -%}
         {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append({'name': peer.name, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+        {%- set _ = result.append({'name': peer, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
       {%- endfor -%} {{ result }}
 
 
