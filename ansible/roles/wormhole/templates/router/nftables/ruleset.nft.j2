@@ -1,9 +1,8 @@
 flush ruleset
 
-define VPN_INTERFACE     = "awg-in"
-define VPN_SUBNET = {{ awg.subnet }}
-define OUT_IFS    = { "eth0", "eth1" }
-define TPROXY_PORT = {{ tproxy.port }}
+define VPN_INTERFACE = "awg-in"
+define VPN_SUBNET   = {{ awg.subnet }}
+define TPROXY_PORT  = {{ tproxy.port }}
 define TPROXY_MARK = 1
 
 # FILTER
@@ -38,7 +37,7 @@ table ip nat {
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
     # Masquerade non-TPROXY'd VPN traffic (ICMP, etc.)
-    ip saddr $VPN_SUBNET oif $OUT_IFS masquerade
+    ip saddr $VPN_SUBNET oifname != $VPN_INTERFACE masquerade
   }
 }
 
