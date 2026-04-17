@@ -1,4 +1,22 @@
 ---
+# ── Kernel modules ────────────────────────────────────────────────────────────
+
+- name: Install linux-modules-extra
+  ansible.builtin.apt:
+    name: 'linux-modules-extra-{{ ansible_kernel }}'
+    state: present
+    update_cache: true
+
+- name: Persist tcp_hybla across reboots
+  ansible.builtin.copy:
+    content: "tcp_hybla\n"
+    dest: /etc/modules-load.d/tcp_hybla.conf
+    mode: '0644'
+
+- name: Load tcp_hybla now
+  ansible.builtin.command: modprobe tcp_hybla
+  changed_when: false
+
 # ── Docker official apt repository ───────────────────────────────────────────
 
 - name: Install apt prerequisites
@@ -26,6 +44,7 @@
     repo: >-
       deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
 
+
     state: present
 
 - name: Install Docker, Docker Compose, and Python cryptography library
@@ -45,6 +64,8 @@
     state: started
     enabled: true
 
+# ── Directories ───────────────────────────────────────────────────────────────
+
 - name: Create directories
   ansible.builtin.file:
     path: '{{ item }}'
@@ -53,6 +74,49 @@
   loop:
     - '{{ deploy_dir }}/sing-box/data'
     - '{{ deploy_dir }}/sing-box/tls'
+    - '{{ deploy_dir }}/amneziawg'
+    - '{{ deploy_dir }}/router/nftables'
+
+# ── AWG server key pair ───────────────────────────────────────────────────────
+
+- name: Check if AWG private key exists
+  ansible.builtin.stat:
+    path: '{{ deploy_dir }}/amneziawg/private.key'
+  register: _awg_key_stat
+
+- name: Generate AWG private key via Docker
+  ansible.builtin.shell: >-
+    docker run --rm amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg genkey > {{ deploy_dir }}/amneziawg/private.key
+
+  when: not _awg_key_stat.stat.exists
+  no_log: true
+
+- name: Set permissions on AWG private key
+  ansible.builtin.file:
+    path: '{{ deploy_dir }}/amneziawg/private.key'
+    mode: '0600'
+
+- name: Slurp AWG private key
+  ansible.builtin.slurp:
+    src: '{{ deploy_dir }}/amneziawg/private.key'
+  register: _awg_privkey_b64
+  no_log: true
+
+- name: Set awg_private_key fact
+  ansible.builtin.set_fact:
+    awg_private_key: '{{ _awg_privkey_b64.content | b64decode | trim }}'
+  no_log: true
+
+- name: Derive AWG public key via Docker
+  ansible.builtin.shell: >-
+    docker run --rm -i amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg pubkey < {{ deploy_dir }}/amneziawg/private.key
+
+  register: _awg_pubkey
+  changed_when: false
+
+- name: Set awg_public_key fact
+  ansible.builtin.set_fact:
+    awg_public_key: '{{ _awg_pubkey.stdout }}'
 
 # ── TLS certificate (server-side, each node generates its own) ───────────────
 
@@ -82,12 +146,113 @@
     provider: selfsigned
     selfsigned_not_after: '+3650d'
 
-# ── Config and service ────────────────────────────────────────────────────────
+# ── Peer key pairs (generated on controller, public keys sent to server) ──────
+
+- name: Create local peer key directories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Create local peer config directories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}'
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+
+- name: Check if peer private keys exist
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+  loop: '{{ awg.clients | default([]) }}'
+  register: _peer_key_stats
+  delegate_to: localhost
+  become: false
+
+- name: Generate peer private keys via Docker
+  ansible.builtin.shell: >-
+    docker run --rm amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg genkey > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
+
+  loop: '{{ _peer_key_stats.results }}'
+  when: not item.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Set permissions on peer private keys
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+    mode: '0600'
+  loop: '{{ awg.clients | default([]) }}'
+  delegate_to: localhost
+  become: false
+
+- name: Derive peer public keys via Docker
+  ansible.builtin.shell: >-
+    docker run --rm -i amneziavpn/amneziawg-go:{{ image_tags.amneziawg }} awg pubkey < {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key
+
+  loop: '{{ awg.clients | default([]) }}'
+  register: _peer_pubkeys
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Build enriched peer list with public keys
+  ansible.builtin.set_fact:
+    awg_clients_with_keys: >-
+      {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg.clients | default([])) | length) -%}
+        {%- set peer = (awg.clients | default([]))[i] -%}
+        {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
+        {%- set _ = result.append({'name': peer.name, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+      {%- endfor -%} {{ result }}
+
+
+# ── Config files ──────────────────────────────────────────────────────────────
 
 - name: Deploy docker-compose.yml
-  ansible.builtin.copy:
-    src: docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
     dest: '{{ deploy_dir }}/docker-compose.yml'
+    mode: '0644'
+
+- name: Deploy amneziawg Dockerfile
+  ansible.builtin.template:
+    src: amneziawg/Dockerfile.j2
+    dest: '{{ deploy_dir }}/amneziawg/Dockerfile'
+    mode: '0644'
+
+- name: Deploy amneziawg entrypoint
+  ansible.builtin.template:
+    src: amneziawg/docker-entrypoint.fish
+    dest: '{{ deploy_dir }}/amneziawg/docker-entrypoint.fish'
+    mode: '0755'
+
+- name: Deploy AWG interface config
+  ansible.builtin.template:
+    src: amneziawg/awg-in.conf.j2
+    dest: '{{ deploy_dir }}/amneziawg/awg-in.conf'
+    mode: '0600'
+  notify: Reload AWG
+
+- name: Deploy router Dockerfile
+  ansible.builtin.template:
+    src: router/Dockerfile
+    dest: '{{ deploy_dir }}/router/Dockerfile'
+    mode: '0644'
+
+- name: Deploy router entrypoint
+  ansible.builtin.template:
+    src: router/docker-entrypoint.fish
+    dest: '{{ deploy_dir }}/router/docker-entrypoint.fish'
+    mode: '0755'
+
+- name: Deploy nftables ruleset
+  ansible.builtin.template:
+    src: router/nftables/ruleset.nft.j2
+    dest: '{{ deploy_dir }}/router/nftables/ruleset.nft'
     mode: '0644'
 
 - name: Deploy sing-box config
@@ -97,7 +262,26 @@
     mode: '0644'
   notify: Restart sing-box
 
-- name: Start sing-box
+# ── Services ──────────────────────────────────────────────────────────────────
+
+- name: Start services
   community.docker.docker_compose_v2:
     project_src: '{{ deploy_dir }}'
     state: present
+    build: always
+
+# ── Client configs (rendered locally) ────────────────────────────────────────
+
+- name: Render client VPN configs
+  ansible.builtin.template:
+    src: amneziawg/client.conf.j2
+    dest: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}.conf'
+    mode: '0600'
+  loop: '{{ awg_clients_with_keys | default([]) }}'
+  loop_control:
+    loop_var: awg_peer
+  vars:
+    peer: '{{ awg_peer }}'
+    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.name ~ '.key') }}"
+  delegate_to: localhost
+  become: false

@@ -2,6 +2,9 @@
 ansible/inventory/hosts.local.yml
 ansible/inventory/host_vars/
 
+# Generates files
+ansible/local/
+
 # Ansible Vault password file
 .vault-password
 

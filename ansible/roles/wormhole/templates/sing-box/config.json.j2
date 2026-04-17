@@ -4,8 +4,8 @@
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
 {%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
-{%- set tunnel_dns = hostvars[peers[0]]['dns_local_server'] -%}
-{%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='local_domains', default=[]) | flatten -%}
+{%- set tunnel_dns = hostvars[peers[0]]['dns']['local_server'] -%}
+{%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
 {
   "dns": {
     "final": "upstream-local",
@@ -45,7 +45,7 @@
       {
         "type": "udp",
         "tag": "upstream-local",
-        "server": "{{ dns_local_server }}"
+        "server": "{{ dns.local_server }}"
       },
       {
         "type": "fakeip",
@@ -69,7 +69,7 @@
       "auth_key": "{{ vault_tailscale_auth_key }}",
 {% endif %}
       "ephemeral": false,
-      "hostname": "{{ tailscale_hostname }}",
+      "hostname": "{{ tailscale.hostname }}",
       "state_directory": "/var/lib/sing-box/tailscale",
       "tag": "ts-ep",
       "type": "tailscale"
@@ -80,13 +80,13 @@
       "type": "tproxy",
       "tag": "awg-in",
       "listen": "::",
-      "listen_port": 7895
+      "listen_port": {{ tproxy.port }}
     },
     {
       "type": "hysteria2",
       "tag": "tunnel-in",
       "listen": "::",
-      "listen_port": {{ hysteria2_port }},
+      "listen_port": {{ hysteria2.port }},
       "users": [
         { "password": "{{ vault_hysteria2_password }}" }
       ],
@@ -98,7 +98,7 @@
     }
   ],
   "log": {
-    "level": "{{ log_level }}"
+    "level": "{{ log.level }}"
   },
   "outbounds": [
     {
@@ -110,7 +110,7 @@
       "tag": "peer-{{ p }}",
       "type": "hysteria2",
       "server": "{{ hostvars[p]['ansible_host'] }}",
-      "server_port": {{ hysteria2_port }},
+      "server_port": {{ hysteria2.port }},
       "password": "{{ vault_hysteria2_password }}",
       "tls": {
         "enabled": true,
@@ -130,7 +130,7 @@
         "tag": "route-rules",
         "type": "remote",
         "format": "source",
-        "url": "{{ rule_set_base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
+        "url": "{{ rule_set.base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
         "update_interval": "5m"
       }
     ],

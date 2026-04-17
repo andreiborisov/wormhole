@@ -1,1 +1,6 @@
+---
 deploy_dir: /root/wormhole
+awg:
+  port: 51820
+tproxy:
+  port: 7895

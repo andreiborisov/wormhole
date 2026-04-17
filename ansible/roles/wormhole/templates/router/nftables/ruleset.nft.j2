@@ -1,9 +1,9 @@
 flush ruleset
 
 define VPN_INTERFACE     = "awg-in"
-define VPN_SUBNET = {{ awg_subnet }}
+define VPN_SUBNET = {{ awg.subnet }}
 define OUT_IFS    = { "eth0", "eth1" }
-define TPROXY_PORT = 7893
+define TPROXY_PORT = {{ tproxy.port }}
 define TPROXY_MARK = 1
 
 # FILTER

@@ -4,26 +4,37 @@
 
 all:
   vars:
-    rule_set_base_url: "https://raw.githubusercontent.com/YOUR_ORG/YOUR_REPO/main/rules"
-    ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+    rule_set:
+      ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+      base_url: "https://raw.githubusercontent.com/YOUR_ORG/YOUR_REPO/main/rules"
   hosts:
     wormhole-ru:
       ansible_host: YOUR_WORMHOLE_RU_IP
       ansible_user: root
-      tailscale_hostname: "wormhole-ru"
-      awg_subnet: '10.47.23.0/24'
-      peers:
-        - "wormhole-fi"
       restricted: true
-      dns_local_server: "77.88.8.8"
+      dns:
+        local_server: "77.88.8.8"
+      peers:
+        - 'wormhole-eu'
+      tailscale:
+        hostname: "wormhole-ru"
+      awg:
+        subnet: '10.47.23.0/24'
+        clients:
+          - name: "my-device"
     wormhole-fi:
-      ansible_host: YOUR_WORMHOLE_FI_IP
+      ansible_host: YOUR_WORMHOLE_EU_IP
       ansible_user: root
-      tailscale_hostname: "wormhole-fi"
-      awg_subnet: '10.47.24.0/24'
+      restricted: false
+      dns:
+        local_server: "1.1.1.1"
+        local_domains:
+          - "retn.net"
       peers:
         - "wormhole-ru"
-      restricted: false
-      dns_local_server: "1.1.1.1"
-      local_domains:
-        - "retn.net"
+      tailscale:
+        hostname: "wormhole-eu"
+      awg:
+        subnet: '10.47.24.0/24'
+        clients:
+          - name: "my-device"

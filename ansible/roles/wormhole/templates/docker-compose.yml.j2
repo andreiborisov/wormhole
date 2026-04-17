@@ -3,7 +3,7 @@ services:
   amneziawg:
     build:
       context: ./amneziawg
-    image: amneziawg:{{ amneziawg_image_tag }}
+    image: amneziawg:{{ image_tags.amneziawg }}
     container_name: amneziawg
     cap_add:
       - NET_ADMIN
@@ -11,7 +11,7 @@ services:
     networks:
       - wormhole
     ports:
-      - "{{ awg_port }}:{{ awg_port }}/udp"
+      - "{{ awg.port }}:{{ awg.port }}/udp"
     ulimits:
       nofile:
         soft: 51200
@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
 
   sing-box:
-    image: ghcr.io/sagernet/sing-box:{{ sing_box_image_tag }}
+    image: ghcr.io/sagernet/sing-box:{{ image_tags.sing_box }}
     container_name: sing-box
     depends_on:
       amneziawg:
@@ -94,7 +94,7 @@ services:
     volumes:
       - ./sing-box/config.json:/etc/sing-box/config.json:ro
       - ./sing-box/data:/var/lib/sing-box
-        ./sing-box/tls:/etc/sing-box/tls:ro
+      - ./sing-box/tls:/etc/sing-box/tls:ro
     restart: unless-stopped
 
 networks:

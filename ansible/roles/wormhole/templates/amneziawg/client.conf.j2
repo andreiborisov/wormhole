@@ -1,0 +1,64 @@
+{%- set node_idx = groups['all'].index(inventory_hostname) -%}
+{%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
+{%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
+{%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
+{%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
+{%- set allowed_ips = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
+[Interface]
+Address    = {{ peer.ip }}/32
+PrivateKey = {{ peer_private_key }}
+DNS        = {{ hostvars[peers[0]]['dns']['local_server'] }}
+{% if awg.jc is defined %}
+Jc   = {{ awg.jc }}
+{% endif %}
+{% if awg.jmin is defined %}
+Jmin = {{ awg.jmin }}
+{% endif %}
+{% if awg.jmax is defined %}
+Jmax = {{ awg.jmax }}
+{% endif %}
+{% if awg.s1 is defined %}
+S1   = {{ awg.s1 }}
+{% endif %}
+{% if awg.s2 is defined %}
+S2   = {{ awg.s2 }}
+{% endif %}
+{% if awg.s3 is defined %}
+S3   = {{ awg.s3 }}
+{% endif %}
+{% if awg.s4 is defined %}
+S4   = {{ awg.s4 }}
+{% endif %}
+{% if awg.h1 is defined %}
+H1   = {{ awg.h1 }}
+{% endif %}
+{% if awg.h2 is defined %}
+H2   = {{ awg.h2 }}
+{% endif %}
+{% if awg.h3 is defined %}
+H3   = {{ awg.h3 }}
+{% endif %}
+{% if awg.h4 is defined %}
+H4   = {{ awg.h4 }}
+{% endif %}
+{% if awg.i1 is defined %}
+I1   = {{ awg.i1 }}
+{% endif %}
+{% if awg.i2 is defined %}
+I2   = {{ awg.i2 }}
+{% endif %}
+{% if awg.i3 is defined %}
+I3   = {{ awg.i3 }}
+{% endif %}
+{% if awg.i4 is defined %}
+I4   = {{ awg.i4 }}
+{% endif %}
+{% if awg.i5 is defined %}
+I5   = {{ awg.i5 }}
+{% endif %}
+
+[Peer]
+PublicKey           = {{ awg_public_key }}
+Endpoint            = {{ ansible_host }}:{{ awg.port }}
+AllowedIPs          = {{ allowed_ips | join(', ') }}
+PersistentKeepalive = 25
