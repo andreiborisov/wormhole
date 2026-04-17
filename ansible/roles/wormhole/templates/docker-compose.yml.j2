@@ -12,6 +12,7 @@ services:
       - wormhole
     ports:
       - "{{ awg.port }}:{{ awg.port }}/udp"
+      - "{{ hysteria2.port }}:{{ hysteria2.port }}/udp"
     ulimits:
       nofile:
         soft: 51200
