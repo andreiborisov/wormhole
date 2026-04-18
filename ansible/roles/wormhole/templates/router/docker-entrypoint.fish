@@ -20,19 +20,6 @@ end
 
 function apply_rules
   echo "Applying rules..."
-  echo "Loading netfilter modules..."
-  modprobe nft_tproxy
-  or return 1
-
-  modprobe nft_socket
-  or return 1
-
-  echo "Setting up TPROXY policy routing..."
-  if not ip rule show | string match -q "*fwmark 0x100/0x100*lookup 100*"
-    ip rule add fwmark 0x100/0x100 table 100
-  end
-  ip route replace local default dev lo table 100
-
   echo "Applying nftables rules..."
   nft -f /etc/nftables/ruleset.nft
   or return 1

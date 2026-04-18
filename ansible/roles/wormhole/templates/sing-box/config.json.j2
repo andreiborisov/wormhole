@@ -4,6 +4,9 @@
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
 {%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
+{%- set peer_host_routes = peers | map('extract', hostvars) | map(attribute='ansible_host') | map('regex_replace', '$', '/32') | list -%}
+{%- set local_host_route = [ansible_host ~ '/32'] -%}
+{%- set tun_route_excludes = local_host_route + peer_host_routes -%}
 {%- set tunnel_dns = hostvars[peers[0]]['dns']['local_server'] -%}
 {%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
 {
@@ -23,7 +26,7 @@
       },
       {
         "rule_set": ["route-rules"],
-        "server": "upstream-tunnel"
+        "server": "upstream-local"
       }{% if peer_domain_suffixes %},
       {
         "domain_suffix": {{ peer_domain_suffixes | to_json }},
@@ -32,7 +35,7 @@
       },
       {
         "domain_suffix": {{ peer_domain_suffixes | to_json }},
-        "server": "upstream-tunnel"
+        "server": "upstream-local"
       }{% endif %}
     ],
     "servers": [
@@ -77,10 +80,15 @@
   ],
   "inbounds": [
     {
-      "type": "tproxy",
-      "tag": "awg-in",
-      "listen": "0.0.0.0",
-      "listen_port": {{ tproxy.port }}
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "sb-tun",
+      "address": ["172.19.0.1/30"],
+      "include_interface": ["awg-in"],
+      "route_exclude_address": {{ tun_route_excludes | unique | list | to_json }},
+      "auto_route": true,
+      "strict_route": true,
+      "mtu": 9000
     },
     {
       "type": "hysteria2",
@@ -125,6 +133,7 @@
     }
   ],
   "route": {
+    "auto_detect_interface": true,
     "rule_set": [
       {
         "tag": "route-rules",

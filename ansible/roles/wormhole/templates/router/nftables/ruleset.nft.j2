@@ -2,8 +2,6 @@ flush ruleset
 
 define VPN_INTERFACE = "awg-in"
 define VPN_SUBNET   = {{ awg.subnet }}
-define TPROXY_PORT  = {{ tproxy.port }}
-define TPROXY_MARK = 0x100
 
 # FILTER
 
@@ -41,17 +39,3 @@ table ip nat {
   }
 }
 
-# TPROXY
-
-table ip mangle {
-
-  chain prerouting {
-    type filter hook prerouting priority mangle; policy accept;
-
-    iifname $VPN_INTERFACE socket transparent 1 meta mark set $TPROXY_MARK accept
-
-    # Intercept traffic from VPN clients → sing-box transparent proxy
-    iifname $VPN_INTERFACE meta l4proto tcp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
-    iifname $VPN_INTERFACE meta l4proto udp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
-  }
-}
