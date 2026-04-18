@@ -28,8 +28,8 @@ function apply_rules
   or return 1
 
   echo "Setting up TPROXY policy routing..."
-  if not ip rule show | string match -q "*fwmark 0x1*lookup 100*"
-    ip rule add fwmark 1 table 100
+  if not ip rule show | string match -q "*fwmark 0x100/0x100*lookup 100*"
+    ip rule add fwmark 0x100/0x100 table 100
   end
   ip route replace local default dev lo table 100
 

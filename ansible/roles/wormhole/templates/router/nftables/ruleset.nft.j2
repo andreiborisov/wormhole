@@ -3,7 +3,7 @@ flush ruleset
 define VPN_INTERFACE = "awg-in"
 define VPN_SUBNET   = {{ awg.subnet }}
 define TPROXY_PORT  = {{ tproxy.port }}
-define TPROXY_MARK = 1
+define TPROXY_MARK = 0x100
 
 # FILTER
 
@@ -48,14 +48,10 @@ table ip mangle {
   chain prerouting {
     type filter hook prerouting priority mangle; policy accept;
 
-    # Intercept TCP from VPN clients → sing-box transparent proxy
-    iif $VPN_INTERFACE meta l4proto tcp \
-      tproxy to :$TPROXY_PORT \
-      meta mark set $TPROXY_MARK
+    iif $VPN_INTERFACE socket transparent 1 meta mark set $TPROXY_MARK accept
 
-    # Optionally intercept UDP too (if sing-box is configured for it):
-    iif $VPN_INTERFACE meta l4proto udp \
-      tproxy to :$TPROXY_PORT \
-      meta mark set $TPROXY_MARK
+    # Intercept traffic from VPN clients → sing-box transparent proxy
+    iif $VPN_INTERFACE meta l4proto tcp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
+    iif $VPN_INTERFACE meta l4proto udp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
   }
 }
