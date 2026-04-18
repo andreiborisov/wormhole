@@ -6,7 +6,7 @@ log:
   level: 'warn'
 
 hysteria2:
-  port: 443
+  port: 8443
 
 awg:
   port: 5252
