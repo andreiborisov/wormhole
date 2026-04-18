@@ -1,18 +1,36 @@
 services:
 
-  amneziawg:
+  router:
     build:
-      context: ./amneziawg
-    image: amneziawg:{{ image_tags.amneziawg }}
-    container_name: amneziawg
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
+      context: ./router
+    image: router:latest
+    container_name: router
     networks:
       - wormhole
     ports:
       - "{{ awg.port }}:{{ awg.port }}/udp"
       - "{{ hysteria2.port }}:{{ hysteria2.port }}/udp"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
+      - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
+    command: ["awg-in"]
+    restart: unless-stopped
+
+  amneziawg:
+    build:
+      context: ./amneziawg
+    image: amneziawg:{{ image_tags.amneziawg }}
+    container_name: amneziawg
+    network_mode: "service:router"
+    depends_on:
+      - router
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
     ulimits:
       nofile:
         soft: 51200
@@ -51,28 +69,10 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  router:
-    build:
-      context: ./router
-    image: router:latest
-    container_name: router
-    network_mode: "service:amneziawg"
-    depends_on:
-      amneziawg:
-        condition: service_healthy
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    volumes:
-      - /lib/modules:/lib/modules:ro
-      - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
-      - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
-    command: ["awg-in"]
-    restart: unless-stopped
-
   sing-box:
     image: ghcr.io/sagernet/sing-box:{{ image_tags.sing_box }}
     container_name: sing-box
+    network_mode: "service:router"
     depends_on:
       amneziawg:
         condition: service_healthy
@@ -82,7 +82,6 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    network_mode: "service:amneziawg"
     command:
       - -D
       - /var/lib/sing-box
