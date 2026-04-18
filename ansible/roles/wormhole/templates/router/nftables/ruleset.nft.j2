@@ -1,11 +1,12 @@
-flush ruleset
+add table ip wormhole
+flush table ip wormhole
 
 define VPN_INTERFACE = "awg-in"
 define VPN_SUBNET   = {{ awg.subnet }}
 
-# FILTER
+table ip wormhole {
 
-table ip filter {
+  # FILTER
 
   chain input {
     type filter hook input priority filter; policy accept;
@@ -23,14 +24,7 @@ table ip filter {
     iifname $VPN_INTERFACE ip saddr $VPN_SUBNET accept
   }
 
-  chain output {
-    type filter hook output priority filter; policy accept;
-  }
-}
-
-# NAT
-
-table ip nat {
+  # NAT
 
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;

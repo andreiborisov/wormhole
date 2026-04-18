@@ -5,35 +5,23 @@ services:
       context: ./router
     image: router:latest
     container_name: router
-    networks:
-      - wormhole
-    ports:
-      - "{{ awg.port }}:{{ awg.port }}/udp"
-      - "{{ hysteria2.port }}:{{ hysteria2.port }}/udp"
+    network_mode: host
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
-    sysctls:
-      # Forwarding
-      net.ipv4.ip_forward: 1
-      net.ipv4.conf.all.src_valid_mark: 1
-      net.ipv4.conf.all.rp_filter: 0
-      net.ipv4.conf.default.rp_filter: 0
     volumes:
-      - /lib/modules:/lib/modules:ro
       - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
       - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
-    command: ["awg-in"]
-    restart: unless-stopped
+    restart: "no"
 
   amneziawg:
     build:
       context: ./amneziawg
     image: amneziawg:{{ image_tags.amneziawg }}
     container_name: amneziawg
-    network_mode: "service:router"
+    network_mode: host
     depends_on:
-      - router
+      router:
+        condition: service_completed_successfully
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -41,23 +29,6 @@ services:
       nofile:
         soft: 51200
         hard: 51200
-    sysctls:
-      # Networking
-      net.core.somaxconn: 4096
-      # TCP tuning
-      net.ipv4.tcp_syncookies: 1
-      net.ipv4.tcp_tw_reuse: 1
-      net.ipv4.tcp_fin_timeout: 30
-      net.ipv4.tcp_keepalive_time: 1200
-      net.ipv4.ip_local_port_range: "10000 65000"
-      net.ipv4.tcp_max_syn_backlog: 8192
-      net.ipv4.tcp_max_tw_buckets: 5000
-      net.ipv4.tcp_fastopen: 3
-      net.ipv4.tcp_rmem: "4096 87380 67108864"
-      net.ipv4.tcp_wmem: "4096 65536 67108864"
-      net.ipv4.tcp_mtu_probing: 1
-      net.ipv4.tcp_slow_start_after_idle: 0
-      net.ipv4.tcp_no_metrics_save: 1
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
@@ -75,12 +46,12 @@ services:
   sing-box:
     image: ghcr.io/sagernet/sing-box:{{ image_tags.sing_box }}
     container_name: sing-box
-    network_mode: "service:router"
+    network_mode: host
     depends_on:
+      router:
+        condition: service_completed_successfully
       amneziawg:
         condition: service_healthy
-      router:
-        condition: service_started
     cap_add:
       - NET_ADMIN
     devices:
@@ -96,7 +67,3 @@ services:
       - ./sing-box/data:/var/lib/sing-box
       - ./sing-box/tls:/etc/sing-box/tls:ro
     restart: unless-stopped
-
-networks:
-  wormhole:
-    driver: bridge
