@@ -14,7 +14,7 @@ table ip filter {
     ct state invalid drop
     ct state established,related accept
     iif lo accept
-    iif $VPN_INTERFACE accept
+    iifname $VPN_INTERFACE accept
   }
 
   chain forward {
@@ -22,7 +22,7 @@ table ip filter {
     ct state invalid drop
     ct state established,related accept
     # Allow non-TPROXY'd VPN traffic (ICMP, etc.) to be forwarded
-    iif $VPN_INTERFACE ip saddr $VPN_SUBNET accept
+    iifname $VPN_INTERFACE ip saddr $VPN_SUBNET accept
   }
 
   chain output {
@@ -48,10 +48,10 @@ table ip mangle {
   chain prerouting {
     type filter hook prerouting priority mangle; policy accept;
 
-    iif $VPN_INTERFACE socket transparent 1 meta mark set $TPROXY_MARK accept
+    iifname $VPN_INTERFACE socket transparent 1 meta mark set $TPROXY_MARK accept
 
     # Intercept traffic from VPN clients → sing-box transparent proxy
-    iif $VPN_INTERFACE meta l4proto tcp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
-    iif $VPN_INTERFACE meta l4proto udp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
+    iifname $VPN_INTERFACE meta l4proto tcp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
+    iifname $VPN_INTERFACE meta l4proto udp tproxy to :$TPROXY_PORT meta mark set $TPROXY_MARK
   }
 }
