@@ -3,7 +3,7 @@
 
 - name: Install linux-modules-extra
   ansible.builtin.apt:
-    name: 'linux-modules-extra-{{ ansible_kernel }}'
+    name: 'linux-modules-extra-{{ ansible_facts["kernel"] }}'
     state: present
     update_cache: true
 
@@ -52,14 +52,14 @@
 
 - name: Add Docker GPG key
   ansible.builtin.get_url:
-    url: 'https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg'
+    url: 'https://download.docker.com/linux/{{ ansible_facts["distribution"] | lower }}/gpg'
     dest: /etc/apt/keyrings/docker.asc
     mode: '0644'
 
 - name: Add Docker apt repository
   ansible.builtin.apt_repository:
     repo: >-
-      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable
+      deb [arch={{ ansible_facts["architecture"] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/{{ ansible_facts["distribution"] | lower }} {{ ansible_facts["distribution_release"] }} stable
 
 
     state: present
