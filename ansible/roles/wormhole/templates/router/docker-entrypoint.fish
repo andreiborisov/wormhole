@@ -7,7 +7,19 @@ end
 
 set interfaces $argv
 
+function wait_for_interfaces
+  echo "Waiting for interfaces:" $interfaces
+
+  for interface in $interfaces
+    while not ip link show $interface &> /dev/null
+      sleep 5
+    end
+    echo "Interface $interface is up."
+  end
+end
+
 function apply_rules
+  echo "Applying rules..."
   echo "Loading netfilter modules..."
   modprobe nft_tproxy
   or return 1
@@ -32,12 +44,17 @@ function monitor_interfaces
   ip monitor link | while read -l line
     for interface in $interfaces
       if string match -q "Deleted*$interface*" $line
-        echo "Interface $interface removed — exiting for Docker restart."
+        echo "Interface $interface removed."
+        # Drain the pipe to let ip monitor exit cleanly
+        kill (pgrep -n ip) 2> /dev/null
         return 1
       end
     end
   end
 end
 
-apply_rules
-and monitor_interfaces
+while true
+  wait_for_interfaces
+  and apply_rules
+  and monitor_interfaces
+end
