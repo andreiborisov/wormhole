@@ -3,5 +3,3 @@ deploy_dir: /root/wormhole
 tcp_congestion_control: 'bbr'
 awg:
   port: 51820
-tproxy:
-  port: 7893
