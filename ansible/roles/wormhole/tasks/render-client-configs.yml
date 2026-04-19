@@ -1,0 +1,69 @@
+---
+- name: Create local peer config directories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}'
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+
+- name: Check if peer private keys exist
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key'
+  loop: '{{ awg.clients | default([]) }}'
+  register: _peer_key_stats
+  delegate_to: localhost
+  become: false
+
+- name: Generate peer private keys
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64, os
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    key = X25519PrivateKey.generate()
+    print(base64.b64encode(key.private_bytes_raw()).decode())
+    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
+    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
+  loop: '{{ _peer_key_stats.results }}'
+  when: not item.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Derive peer public keys
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key').read().strip())
+    pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+    print(base64.b64encode(pub).decode())
+    "
+  loop: '{{ awg.clients | default([]) }}'
+  register: _peer_pubkeys
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Build enriched peer list with public keys
+  ansible.builtin.set_fact:
+    awg_clients_with_keys: >-
+      {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg.clients | default([])) | length) -%}
+        {%- set peer = (awg.clients | default([]))[i] -%}
+        {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
+        {%- set _ = result.append({'name': peer, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+      {%- endfor -%} {{ result }}
+
+- name: Render client VPN configs
+  ansible.builtin.template:
+    src: amneziawg/client.conf.j2
+    dest: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}.conf'
+    mode: '0600'
+  loop: '{{ awg_clients_with_keys | default([]) }}'
+  loop_control:
+    loop_var: awg_peer
+  vars:
+    peer: '{{ awg_peer }}'
+    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.name ~ '.key') }}"
+  delegate_to: localhost
+  become: false

@@ -1,0 +1,87 @@
+---
+- name: Create local AWG key directory
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Check if local AWG server private key exists
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+  register: _local_awg_server_key_stat
+  delegate_to: localhost
+  become: false
+
+- name: Check if remote AWG private key exists
+  ansible.builtin.stat:
+    path: '{{ deploy_dir }}/amneziawg/private.key'
+  register: _remote_awg_key_stat
+
+- name: Read existing remote AWG private key for migration
+  ansible.builtin.slurp:
+    src: '{{ deploy_dir }}/amneziawg/private.key'
+  register: _remote_awg_privkey_b64
+  when:
+    - not _local_awg_server_key_stat.stat.exists
+    - _remote_awg_key_stat.stat.exists
+  no_log: true
+
+- name: Persist existing remote AWG private key locally
+  ansible.builtin.copy:
+    content: "{{ _remote_awg_privkey_b64.content | b64decode | trim }}\n"
+    dest: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+    mode: '0600'
+  when:
+    - not _local_awg_server_key_stat.stat.exists
+    - _remote_awg_key_stat.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Generate local AWG server private key
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    key = X25519PrivateKey.generate()
+    print(base64.b64encode(key.private_bytes_raw()).decode())
+    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key
+    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key
+  when:
+    - not _local_awg_server_key_stat.stat.exists
+    - not _remote_awg_key_stat.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Copy AWG private key to server
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+    dest: '{{ deploy_dir }}/amneziawg/private.key'
+    mode: '0600'
+  no_log: true
+
+- name: Set awg_private_key fact
+  ansible.builtin.set_fact:
+    awg_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/server.key') | trim }}"
+  no_log: true
+
+- name: Derive AWG public key locally
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key').read().strip())
+    pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+    print(base64.b64encode(pub).decode())
+    "
+  register: _awg_pubkey
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Set awg_public_key fact
+  ansible.builtin.set_fact:
+    awg_public_key: '{{ _awg_pubkey.stdout }}'
