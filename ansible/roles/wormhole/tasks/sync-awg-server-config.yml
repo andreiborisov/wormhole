@@ -1,0 +1,7 @@
+---
+- name: Deploy AWG interface config
+  ansible.builtin.template:
+    src: amneziawg/awg-in.conf.j2
+    dest: '{{ deploy_dir }}/amneziawg/awg-in.conf'
+    mode: '0600'
+  notify: Restart amneziawg

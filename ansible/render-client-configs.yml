@@ -16,3 +16,8 @@
       ansible.builtin.include_role:
         name: wormhole
         tasks_from: render-client-configs.yml
+
+    - name: Sync AWG peers on server
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: sync-awg-server-config.yml
