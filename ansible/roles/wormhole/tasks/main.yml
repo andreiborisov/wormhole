@@ -6,17 +6,20 @@
     name: 'linux-modules-extra-{{ ansible_facts["kernel"] }}'
     state: present
     update_cache: true
+  when: tcp_congestion_control == 'hybla'
 
 - name: Persist tcp_hybla across reboots
   ansible.builtin.copy:
     content: "tcp_hybla\n"
     dest: /etc/modules-load.d/tcp_hybla.conf
     mode: '0644'
+  when: tcp_congestion_control == 'hybla'
 
 - name: Load tcp_hybla now
   community.general.modprobe:
     name: tcp_hybla
     state: present
+  when: tcp_congestion_control == 'hybla'
 
 # ── Host sysctls ──────────────────────────────────────────────────────────────
 
@@ -53,7 +56,7 @@
     - { name: net.ipv4.tcp_mtu_probing, value: '1' }
     - { name: net.ipv4.tcp_slow_start_after_idle, value: '0' }
     - { name: net.ipv4.tcp_no_metrics_save, value: '1' }
-    - { name: net.ipv4.tcp_congestion_control, value: 'hybla' }
+    - { name: net.ipv4.tcp_congestion_control, value: '{{ tcp_congestion_control }}' }
 
 # ── Docker official apt repository ───────────────────────────────────────────
 
