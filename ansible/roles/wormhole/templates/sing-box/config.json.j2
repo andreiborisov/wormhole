@@ -9,6 +9,9 @@
 {%- set tun_route_excludes = local_host_route + peer_host_routes -%}
 {%- set tunnel_dns = hostvars[peers[0]]['dns']['local_server'] -%}
 {%- set peer_domain_suffixes = peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
+{%- set _wg_net = (wg.subnet | default('')).split('/') if wg is defined and wg.subnet is defined else [] -%}
+{%- set _wg_base = _wg_net[0].rsplit('.', 1)[0] if _wg_net else '' -%}
+{%- set _wg_prefix = _wg_net[1] if _wg_net else '24' -%}
 {
   "dns": {
     "final": "upstream-local",
@@ -76,7 +79,22 @@
       "state_directory": "/var/lib/sing-box/tailscale",
       "tag": "ts-ep",
       "type": "tailscale"
-    }
+    }{% if wg_private_key is defined and (wireguard_clients_with_keys | default([]) | length) > 0 %},
+    {
+      "type": "wireguard",
+      "tag": "wg-ep",
+      "address": ["{{ _wg_base }}.1/{{ _wg_prefix }}"],
+      "listen_port": {{ wg.port | default(51821) }},
+      "private_key": "{{ wg_private_key }}",
+      "peers": [
+{% for peer in wireguard_clients_with_keys %}
+        {
+          "public_key": "{{ peer.public_key }}",
+          "allowed_ips": ["{{ peer.ip }}/32"]
+        }{% if not loop.last %},{% endif %}
+{% endfor %}
+      ]
+    }{% endif %}
   ],
   "inbounds": [
     {

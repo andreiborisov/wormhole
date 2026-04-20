@@ -1,0 +1,17 @@
+{%- set node_idx = groups['all'].index(inventory_hostname) -%}
+{%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
+{%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
+{%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
+{%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
+{%- set allowed_ips = [wg.subnet, fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
+{%- set _wg_base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%}
+[Interface]
+Address    = {{ peer.ip }}/32
+PrivateKey = {{ peer_private_key }}
+DNS        = {{ _wg_base }}.1
+
+[Peer]
+PublicKey           = {{ wg_public_key }}
+Endpoint            = {{ ansible_host }}:{{ wg.port | default(51821) }}
+AllowedIPs          = {{ allowed_ips | join(', ') }}
+PersistentKeepalive = 25

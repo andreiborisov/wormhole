@@ -1,16 +1,22 @@
 ---
-# Render AWG client configs without full deployment.
+# Render AWG/WireGuard client configs without full deployment.
 #
 # Usage:
 #   ansible-playbook render-client-configs.yml --ask-vault-pass
 
-- name: Render AWG client configs
+- name: Render AWG and WireGuard client configs
   hosts: all
   tasks:
     - name: Prepare AWG server keys and facts
       ansible.builtin.include_role:
         name: wormhole
         tasks_from: awg-server-keys.yml
+
+    - name: Prepare WireGuard server keys and facts
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: wg-server-keys.yml
+      when: wg.subnet is defined
 
     - name: Render client configs locally
       ansible.builtin.include_role:

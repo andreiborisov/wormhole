@@ -1,6 +1,6 @@
 ---
-# Full provisioning: installs Docker, generates TLS certs, and deploys
-# sing-box on all nodes.
+# Full provisioning: installs Docker, generates TLS certs/keys, and deploys
+# sing-box + AWG/WireGuard on all nodes.
 #
 # Usage:
 #   ansible-playbook site.yml --ask-vault-pass

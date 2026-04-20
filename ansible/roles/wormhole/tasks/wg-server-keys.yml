@@ -1,0 +1,52 @@
+---
+- name: Create local WireGuard key directory
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Check if local WireGuard server private key exists
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/server.key'
+  register: _local_wg_server_key_stat
+  delegate_to: localhost
+  become: false
+
+- name: Generate local WireGuard server private key
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    key = X25519PrivateKey.generate()
+    print(base64.b64encode(key.private_bytes_raw()).decode())
+    " > {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/server.key
+    chmod 0600 {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/server.key
+  when: not _local_wg_server_key_stat.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Set wg_private_key fact
+  ansible.builtin.set_fact:
+    wg_private_key: "{{ lookup('file', playbook_dir ~ '/local/wireguard/keys/' ~ inventory_hostname ~ '/server.key') | trim }}"
+  no_log: true
+
+- name: Derive WireGuard public key locally
+  ansible.builtin.shell: |
+    python3 -c "
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/server.key').read().strip())
+    pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+    print(base64.b64encode(pub).decode())
+    "
+  register: _wg_pubkey
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Set wg_public_key fact
+  ansible.builtin.set_fact:
+    wg_public_key: '{{ _wg_pubkey.stdout }}'

@@ -131,6 +131,18 @@
     - awg-keys
     - client-configs
 
+- name: Prepare WireGuard server keys and facts
+  ansible.builtin.include_tasks:
+    file: wg-server-keys.yml
+    apply:
+      tags:
+        - wg-keys
+        - client-configs
+  when: wg.subnet is defined
+  tags:
+    - wg-keys
+    - client-configs
+
 # ── TLS certificate (server-side, each node generates its own) ───────────────
 
 - name: Generate TLS private key
