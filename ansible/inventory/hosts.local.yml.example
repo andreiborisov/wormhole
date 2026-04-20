@@ -13,7 +13,7 @@ all:
       ansible_user: root
       restricted: true
       dns:
-        local_server: "77.88.8.8"
+        local_server: "127.0.0.53"
       peers:
         - 'wormhole-eu'
       tailscale:
@@ -27,7 +27,7 @@ all:
       ansible_user: root
       restricted: false
       dns:
-        local_server: "1.1.1.1"
+        local_server: "127.0.0.53"
         local_domains:
           - "retn.net"
       peers:
