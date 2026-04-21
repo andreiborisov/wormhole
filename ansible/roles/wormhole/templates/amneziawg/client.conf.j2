@@ -8,7 +8,7 @@
 [Interface]
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
-DNS        = {{ _awg_base }}.1
+DNS        = {{ _awg_base }}.53
 {% if awg.jc is defined %}
 Jc   = {{ awg.jc }}
 {% endif %}
