@@ -1760,12 +1760,16 @@
     {
       "domain_suffix": [
         "ggpht.com",
+        "wide-youtube.l.google.com",
+        "oauthaccountmanager.googleapis.com",
+        "oauth2.googleapis.com",
+        "play.googleapis.com",
+        "youtube.googleapis.com",
+        "youtubei.googleapis.com",
         "googlevideo.com",
         "googleusercontent.com",
         "youtu.be",
         "youtube.com",
-        "youtube.googleapis.com",
-        "youtubei.googleapis.com",
         "ytimg.com"
       ]
     }
