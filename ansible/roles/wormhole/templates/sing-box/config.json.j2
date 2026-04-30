@@ -12,6 +12,9 @@
 {%- set _wg_net = (wg.subnet | default('')).split('/') if wg is defined and wg.subnet is defined else [] -%}
 {%- set _wg_base = _wg_net[0].rsplit('.', 1)[0] if _wg_net else '' -%}
 {%- set _wg_prefix = _wg_net[1] if _wg_net else '24' -%}
+{%- set awg_unconditional_routes = awg_clients_with_keys | default([]) | selectattr('apply_rules', 'equalto', false) | map(attribute='ip') | map('regex_replace', '$', '/32') | list -%}
+{%- set wg_unconditional_routes = wireguard_clients_with_keys | default([]) | selectattr('apply_rules', 'equalto', false) | map(attribute='ip') | map('regex_replace', '$', '/32') | list -%}
+{%- set unconditional_client_routes = (awg_unconditional_routes + wg_unconditional_routes) | unique | list -%}
 {
   "dns": {
     "final": "upstream-local",
@@ -175,7 +178,12 @@
       {
         "port": [53],
         "action": "hijack-dns"
-      },
+      }{% if unconditional_client_routes %},
+      {
+        "source_ip_cidr": {{ unconditional_client_routes | to_json }},
+        "action": "route",
+        "outbound": "tunnel"
+      }{% endif %},
       {
         "rule_set": ["route-rules"],
         "action": "route",

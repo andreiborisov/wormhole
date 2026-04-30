@@ -3,12 +3,15 @@
 {%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
 {%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
-{%- set allowed_ips = [wg.subnet, fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
+{%- set _apply_rules = peer.apply_rules | default(wg.apply_rules_by_default | default(true)) | bool -%}
+{%- set allowed_ips = ([wg.subnet, fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs) if _apply_rules else ['0.0.0.0/0', '::/0'] -%}
 {%- set _wg_base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%}
 [Interface]
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
+{% if _apply_rules %}
 DNS        = {{ _wg_base }}.53
+{% endif %}
 
 [Peer]
 PublicKey           = {{ wg_public_key }}

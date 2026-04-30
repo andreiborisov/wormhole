@@ -7,10 +7,21 @@
   delegate_to: localhost
   become: false
 
+- name: Normalize AmneziaWG clients
+  ansible.builtin.set_fact:
+    awg_clients_normalized: >-
+      {%- set result = [] -%}
+      {%- for client in awg.clients | default([]) -%}
+        {%- set client_name = client.name if client is mapping else client -%}
+        {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (awg.apply_rules_by_default | default(true))) | bool -%}
+        {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
+      {%- endfor -%}
+      {{ result }}
+
 - name: Check if peer private keys exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key'
-  loop: '{{ awg.clients | default([]) }}'
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+  loop: '{{ awg_clients_normalized | default([]) }}'
   register: _peer_key_stats
   delegate_to: localhost
   become: false
@@ -22,8 +33,8 @@
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     key = X25519PrivateKey.generate()
     print(base64.b64encode(key.private_bytes_raw()).decode())
-    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
-    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item }}.key
+    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
+    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
   loop: '{{ _peer_key_stats.results }}'
   when: not item.stat.exists
   no_log: true
@@ -35,11 +46,11 @@
     python3 -c "
     import base64
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item }}.key').read().strip())
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key').read().strip())
     pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
     print(base64.b64encode(pub).decode())
     "
-  loop: '{{ awg.clients | default([]) }}'
+  loop: '{{ awg_clients_normalized | default([]) }}'
   register: _peer_pubkeys
   changed_when: false
   delegate_to: localhost
@@ -48,10 +59,10 @@
 - name: Build enriched peer list with public keys
   ansible.builtin.set_fact:
     awg_clients_with_keys: >-
-      {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg.clients | default([])) | length) -%}
-        {%- set peer = (awg.clients | default([]))[i] -%}
+      {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg_clients_normalized | default([])) | length) -%}
+        {%- set peer = (awg_clients_normalized | default([]))[i] -%}
         {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append({'name': peer, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+        {%- set _ = result.append({'name': peer.name, 'apply_rules': peer.apply_rules, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
       {%- endfor -%} {{ result }}
 
 - name: Render client VPN configs
@@ -77,10 +88,22 @@
   become: false
   when: wg.subnet is defined
 
+- name: Normalize WireGuard clients
+  ansible.builtin.set_fact:
+    wg_clients_normalized: >-
+      {%- set result = [] -%}
+      {%- for client in wg.clients | default([]) -%}
+        {%- set client_name = client.name if client is mapping else client -%}
+        {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (wg.apply_rules_by_default | default(true))) | bool -%}
+        {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
+      {%- endfor -%}
+      {{ result }}
+  when: wg.subnet is defined
+
 - name: Check if WireGuard peer private keys exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item }}.key'
-  loop: '{{ wg.clients | default([]) }}'
+    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+  loop: '{{ wg_clients_normalized | default([]) }}'
   register: _wg_peer_key_stats
   delegate_to: localhost
   become: false
@@ -93,8 +116,8 @@
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     key = X25519PrivateKey.generate()
     print(base64.b64encode(key.private_bytes_raw()).decode())
-    " > {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item }}.key
-    chmod 0600 {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item }}.key
+    " > {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
+    chmod 0600 {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
   loop: '{{ _wg_peer_key_stats.results | default([]) }}'
   when:
     - wg.subnet is defined
@@ -108,11 +131,11 @@
     python3 -c "
     import base64
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    priv = base64.b64decode(open('{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item }}.key').read().strip())
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.name }}.key').read().strip())
     pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
     print(base64.b64encode(pub).decode())
     "
-  loop: '{{ wg.clients | default([]) }}'
+  loop: '{{ wg_clients_normalized | default([]) }}'
   register: _wg_peer_pubkeys
   changed_when: false
   delegate_to: localhost
@@ -122,10 +145,10 @@
 - name: Build enriched WireGuard peer list with public keys
   ansible.builtin.set_fact:
     wireguard_clients_with_keys: >-
-      {%- set result = [] -%} {%- set _base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((wg.clients | default([])) | length) -%}
-        {%- set peer = (wg.clients | default([]))[i] -%}
+      {%- set result = [] -%} {%- set _base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((wg_clients_normalized | default([])) | length) -%}
+        {%- set peer = (wg_clients_normalized | default([]))[i] -%}
         {%- set pubkey = _wg_peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append({'name': peer, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+        {%- set _ = result.append({'name': peer.name, 'apply_rules': peer.apply_rules, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
       {%- endfor -%} {{ result }}
   when: wg.subnet is defined
 
