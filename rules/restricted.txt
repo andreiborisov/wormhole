@@ -1164,7 +1164,7 @@ telegram.org
 2001:b28:f23d::/48
 2001:b28:f23f::/48
 2a0a:f280::/32
-dnskp.cc
+appkp.cc
 kino.pub
 rutor.is
 rutracker.cc
