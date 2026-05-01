@@ -1,0 +1,117 @@
+---
+- name: Normalize VLESS clients
+  ansible.builtin.set_fact:
+    vless_clients_normalized: >-
+      {%- set result = [] -%}
+      {%- for client in clients | default([]) -%}
+        {%- if client is mapping -%}
+          {%- set _ = result.append({
+            'name': client.name,
+            'uuid': client.uuid | default('')
+          }) -%}
+        {%- else -%}
+          {%- set _ = result.append({
+            'name': client,
+            'uuid': ''
+          }) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+- name: Create local VLESS directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    mode: '0700'
+  loop:
+    - '{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}'
+    - '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}'
+  delegate_to: localhost
+  become: false
+
+- name: Check if local Reality private key exists
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/reality_private.key'
+  register: _reality_private_key_stat
+  delegate_to: localhost
+  become: false
+
+- name: Generate local Reality keypair and short ID
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import base64
+    import pathlib
+    import secrets
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+
+    base = pathlib.Path("{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}")
+    base.mkdir(parents=True, exist_ok=True)
+
+    priv = X25519PrivateKey.generate().private_bytes_raw()
+    pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+
+    base.joinpath("reality_private.key").write_text(base64.urlsafe_b64encode(priv).rstrip(b"=").decode() + "\n")
+    base.joinpath("reality_public.key").write_text(base64.urlsafe_b64encode(pub).rstrip(b"=").decode() + "\n")
+    base.joinpath("reality_short_id").write_text(secrets.token_hex(8) + "\n")
+    PY
+    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/reality_private.key"
+    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/reality_public.key"
+    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/reality_short_id"
+  when: not _reality_private_key_stat.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Set Reality server facts
+  ansible.builtin.set_fact:
+    vless: >-
+      {{
+        vless | combine({
+          'private_key': (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/reality_private.key') | trim),
+          'public_key': (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/reality_public.key') | trim),
+          'short_id': (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/reality_short_id') | trim)
+        }, recursive=True)
+      }}
+  no_log: true
+
+- name: Check if VLESS client UUID files exist
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.name }}.uuid'
+  loop: '{{ vless_clients_normalized }}'
+  register: _vless_client_uuid_stats
+  delegate_to: localhost
+  become: false
+
+- name: Generate missing VLESS client UUIDs locally
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import pathlib
+    import uuid
+    pathlib.Path("{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.name }}.uuid").write_text(str(uuid.uuid4()) + "\n")
+    PY
+    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.name }}.uuid"
+  loop: '{{ _vless_client_uuid_stats.results | default([]) }}'
+  when:
+    - item.item.uuid | length == 0
+    - not item.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Initialize enriched VLESS client list
+  ansible.builtin.set_fact:
+    vless_clients_with_credentials: []
+  no_log: true
+
+- name: Build enriched VLESS client list
+  ansible.builtin.set_fact:
+    vless_clients_with_credentials: '{{ (vless_clients_with_credentials | default([])) + [client_with_uuid] }}'
+  vars:
+    client_with_uuid: >-
+      {{
+        item | combine({
+          'uuid': (item.uuid if item.uuid | length > 0 else (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/' ~ item.name ~ '.uuid') | trim))
+        })
+      }}
+  loop: '{{ vless_clients_normalized }}'
+  no_log: true

@@ -11,7 +11,7 @@
   ansible.builtin.set_fact:
     awg_clients_normalized: >-
       {%- set result = [] -%}
-      {%- for client in awg.clients | default([]) -%}
+      {%- for client in clients | default([]) -%}
         {%- set client_name = client.name if client is mapping else client -%}
         {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (awg.apply_rules_by_default | default(true))) | bool -%}
         {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
@@ -92,7 +92,7 @@
   ansible.builtin.set_fact:
     wg_clients_normalized: >-
       {%- set result = [] -%}
-      {%- for client in wg.clients | default([]) -%}
+      {%- for client in clients | default([]) -%}
         {%- set client_name = client.name if client is mapping else client -%}
         {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (wg.apply_rules_by_default | default(true))) | bool -%}
         {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
@@ -166,3 +166,18 @@
   delegate_to: localhost
   become: false
   when: wg.subnet is defined
+
+- name: Render VLESS Reality client URI profiles
+  ansible.builtin.template:
+    src: vless/client-uri.txt.j2
+    dest: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ vless_peer.name }}.txt'
+    mode: '0600'
+  loop: '{{ vless_clients_with_credentials | default([]) }}'
+  loop_control:
+    loop_var: vless_peer
+  vars:
+    peer: '{{ vless_peer }}'
+  delegate_to: localhost
+  become: false
+  when:
+    - (vless_clients_with_credentials | default([]) | length) > 0

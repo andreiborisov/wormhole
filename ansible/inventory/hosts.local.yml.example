@@ -16,12 +16,14 @@ all:
         local_server: "127.0.0.53"
       peers:
         - 'wormhole-eu'
+      clients:
+        - name: "my-device"
       tailscale:
         hostname: "wormhole-ru"
+      vless:
+        domain: "www.cloudflare.com"
       awg:
         subnet: '10.47.23.0/24'
-        clients:
-          - name: "my-device"
     wormhole-fi:
       ansible_host: YOUR_WORMHOLE_EU_IP
       ansible_user: root
@@ -32,9 +34,11 @@ all:
           - "retn.net"
       peers:
         - "wormhole-ru"
+      clients:
+        - name: "my-device"
       tailscale:
         hostname: "wormhole-eu"
+      vless:
+        domain: "www.cloudflare.com"
       awg:
         subnet: '10.47.24.0/24'
-        clients:
-          - name: "my-device"

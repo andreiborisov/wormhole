@@ -143,6 +143,19 @@
     - wg-keys
     - client-configs
 
+- name: Prepare VLESS Reality keys and client credentials
+  ansible.builtin.include_tasks:
+    file: vless-reality-keys.yml
+    apply:
+      tags:
+        - vless-keys
+        - client-configs
+  when:
+    - (clients | default([]) | length) > 0
+  tags:
+    - vless-keys
+    - client-configs
+
 # ── TLS certificate (server-side, each node generates its own) ───────────────
 
 - name: Generate TLS private key

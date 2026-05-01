@@ -1,0 +1,3 @@
+vless://{{ peer.uuid }}@{{ ansible_host }}:{{ vless.port }}?encryption=none&security=reality&sni={{ vless.domain |
+urlencode }}&fp={{ vless.client_fingerprint | urlencode }}&pbk={{ vless.public_key | urlencode }}&sid={{ vless.short_id
+| urlencode }}&flow=xtls-rprx-vision&type=tcp#{{ (inventory_hostname ~ '-' ~ peer.name) | urlencode }}

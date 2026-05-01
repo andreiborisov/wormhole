@@ -18,6 +18,13 @@
         tasks_from: wg-server-keys.yml
       when: wg.subnet is defined
 
+    - name: Prepare VLESS Reality keys and client credentials
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: vless-reality-keys.yml
+      when:
+        - (clients | default([]) | length) > 0
+
     - name: Render client configs locally
       ansible.builtin.include_role:
         name: wormhole

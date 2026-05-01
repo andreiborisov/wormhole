@@ -7,3 +7,8 @@ awg:
 wg:
   port: 51821
   apply_rules_by_default: true
+vless:
+  port: 443
+  domain: 'www.cloudflare.com'
+  max_time_difference: '1m'
+  client_fingerprint: 'chrome'
