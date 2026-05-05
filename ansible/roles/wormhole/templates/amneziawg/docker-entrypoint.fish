@@ -3,9 +3,17 @@
 function start_amneziawg
   echo "Starting AmneziaWG"
 
-  awg-quick down /opt/amnezia/awg/awg-in.conf
-  awg-quick up /opt/amnezia/awg/awg-in.conf
-  or return 1
+  set confs /opt/amnezia/awg/awg-in-*.conf
+  if test (count $confs) -eq 0
+    echo "No awg-in-*.conf found"
+    return 1
+  end
+
+  for conf in $confs
+    awg-quick down $conf >/dev/null 2>&1
+    awg-quick up $conf
+    or return 1
+  end
 end
 
 start_amneziawg

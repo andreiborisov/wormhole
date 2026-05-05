@@ -1,8 +1,7 @@
+{%- set stable_peers = peers | default([]) | unique | sort -%}
+{%- set awg_peer_subnets = stable_peers | map('extract', hostvars) | map(attribute='awg.subnet', default=awg.subnet) | unique | list -%}
 add table ip wormhole
 flush table ip wormhole
-
-define VPN_INTERFACE = "awg-in"
-define VPN_SUBNET   = {{ awg.subnet }}
 
 table ip wormhole {
 
@@ -13,7 +12,7 @@ table ip wormhole {
     ct state invalid drop
     ct state established,related accept
     iif lo accept
-    iifname $VPN_INTERFACE accept
+    iifname "awg-in-*" accept
   }
 
   chain forward {
@@ -21,7 +20,7 @@ table ip wormhole {
     ct state invalid drop
     ct state established,related accept
     # Allow non-TPROXY'd VPN traffic (ICMP, etc.) to be forwarded
-    iifname $VPN_INTERFACE ip saddr $VPN_SUBNET accept
+    iifname "awg-in-*" ip saddr { {{ awg_peer_subnets | join(', ') }} } accept
   }
 
   # NAT
@@ -29,7 +28,6 @@ table ip wormhole {
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
     # Masquerade non-TPROXY'd VPN traffic (ICMP, etc.)
-    ip saddr $VPN_SUBNET oifname != $VPN_INTERFACE masquerade
+    ip saddr { {{ awg_peer_subnets | join(', ') }} }{% for p in stable_peers %} oifname != "awg-in-{{ p }}"{% endfor %} masquerade
   }
 }
-

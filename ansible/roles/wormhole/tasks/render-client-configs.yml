@@ -1,4 +1,8 @@
 ---
+- name: Build deterministic peer list
+  ansible.builtin.set_fact:
+    stable_peers: '{{ (peers | default([]) | unique | sort) }}'
+
 - name: Create local peer config directories
   ansible.builtin.file:
     path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}'
@@ -10,72 +14,113 @@
 - name: Normalize AmneziaWG clients
   ansible.builtin.set_fact:
     awg_clients_normalized: >-
-      {%- set result = [] -%}
-      {%- for client in clients | default([]) -%}
+      {%- set result = [] -%} {%- for client in clients | default([]) -%}
         {%- set client_name = client.name if client is mapping else client -%}
-        {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (awg.apply_rules_by_default | default(true))) | bool -%}
-        {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
-      {%- endfor -%}
-      {{ result }}
+        {%- if client_name not in (result | map(attribute='name') | list) -%}
+          {%- set _ = result.append({'name': client_name}) -%}
+        {%- endif -%}
+      {%- endfor -%} {{ result }}
 
-- name: Check if peer private keys exist
-  ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+- name: Create local AmneziaWG client config subdirectories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ item.name }}'
+    state: directory
+    mode: '0755'
   loop: '{{ awg_clients_normalized | default([]) }}'
+  delegate_to: localhost
+  become: false
+
+
+- name: Build AmneziaWG client profile matrix
+  ansible.builtin.set_fact:
+    awg_client_profiles: >-
+      {%- set result = [] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for i in range((awg_clients_normalized | default([])) | length) -%}
+        {%- set client = (awg_clients_normalized | default([]))[i] -%}
+        {%- if _peer_count > 0 -%}
+          {%- for p_idx in range(_peer_count) -%}
+            {%- set selected_peer = stable_peers[p_idx] -%}
+            {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
+            {%- set _base = selected_awg_subnet.split('/')[0].rsplit('.', 1)[0] -%}
+            {%- for mode in ['split', 'full'] -%}
+            {%- set profile_name = client.name ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+            {%- set mode_offset = 0 if mode == 'split' else _peer_count -%}
+            {%- set ip_octet = 100 + i * (_peer_count * 2) + mode_offset + p_idx -%}
+            {%- set _ = result.append({
+              'name': client.name,
+              'apply_rules': (mode == 'split'),
+              'mode': mode,
+              'selected_peer': selected_peer,
+              'profile_name': profile_name,
+              'key_id': profile_name,
+              'awg_subnet': selected_awg_subnet,
+              'listen_port': (awg.port | int) + p_idx,
+              'ip': _base ~ '.' ~ ip_octet
+            }) -%}
+            {%- endfor -%}
+          {%- endfor -%}
+        {%- endif -%}
+      {%- endfor -%} {{ result }}
+
+
+- name: Check if AmneziaWG profile private keys exist
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
+  loop: '{{ awg_client_profiles | default([]) }}'
   register: _peer_key_stats
   delegate_to: localhost
   become: false
 
-- name: Generate peer private keys
+- name: Generate AmneziaWG profile private keys
   ansible.builtin.shell: |
     python3 -c "
     import base64, os
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     key = X25519PrivateKey.generate()
     print(base64.b64encode(key.private_bytes_raw()).decode())
-    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
-    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
+    " > {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key
+    chmod 0600 {{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key
   loop: '{{ _peer_key_stats.results }}'
   when: not item.stat.exists
   no_log: true
   delegate_to: localhost
   become: false
 
-- name: Derive peer public keys
+- name: Derive AmneziaWG profile public keys
   ansible.builtin.shell: |
     python3 -c "
     import base64
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.name }}.key').read().strip())
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key').read().strip())
     pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
     print(base64.b64encode(pub).decode())
     "
-  loop: '{{ awg_clients_normalized | default([]) }}'
+  loop: '{{ awg_client_profiles | default([]) }}'
   register: _peer_pubkeys
   changed_when: false
   delegate_to: localhost
   become: false
 
-- name: Build enriched peer list with public keys
+- name: Build enriched AmneziaWG profile list with public keys
   ansible.builtin.set_fact:
     awg_clients_with_keys: >-
-      {%- set result = [] -%} {%- set _base = awg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((awg_clients_normalized | default([])) | length) -%}
-        {%- set peer = (awg_clients_normalized | default([]))[i] -%}
+      {%- set result = [] -%} {%- for i in range((awg_client_profiles | default([])) | length) -%}
+        {%- set profile = (awg_client_profiles | default([]))[i] -%}
         {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append({'name': peer.name, 'apply_rules': peer.apply_rules, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+        {%- set _ = result.append(profile | combine({'public_key': pubkey})) -%}
       {%- endfor -%} {{ result }}
+
 
 - name: Render client VPN configs
   ansible.builtin.template:
     src: amneziawg/client.conf.j2
-    dest: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}.conf'
+    dest: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}/{{ awg_peer.profile_name }}.conf'
     mode: '0600'
   loop: '{{ awg_clients_with_keys | default([]) }}'
   loop_control:
     loop_var: awg_peer
   vars:
     peer: '{{ awg_peer }}'
-    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.name ~ '.key') }}"
+    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.key_id ~ '.key') }}"
   delegate_to: localhost
   become: false
 
@@ -91,33 +136,72 @@
 - name: Normalize WireGuard clients
   ansible.builtin.set_fact:
     wg_clients_normalized: >-
-      {%- set result = [] -%}
-      {%- for client in clients | default([]) -%}
+      {%- set result = [] -%} {%- for client in clients | default([]) -%}
         {%- set client_name = client.name if client is mapping else client -%}
-        {%- set apply_rules = (client.apply_rules if (client is mapping and client.apply_rules is defined) else (wg.apply_rules_by_default | default(true))) | bool -%}
-        {%- set _ = result.append({'name': client_name, 'apply_rules': apply_rules}) -%}
-      {%- endfor -%}
-      {{ result }}
+        {%- if client_name not in (result | map(attribute='name') | list) -%}
+          {%- set _ = result.append({'name': client_name}) -%}
+        {%- endif -%}
+      {%- endfor -%} {{ result }}
+
   when: wg.subnet is defined
 
-- name: Check if WireGuard peer private keys exist
-  ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.name }}.key'
+- name: Create local WireGuard client config subdirectories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}/{{ item.name }}'
+    state: directory
+    mode: '0755'
   loop: '{{ wg_clients_normalized | default([]) }}'
+  delegate_to: localhost
+  become: false
+  when: wg.subnet is defined
+
+- name: Build WireGuard client profile matrix
+  ansible.builtin.set_fact:
+    wg_client_profiles: >-
+      {%- set result = [] -%} {%- set _base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for i in range((wg_clients_normalized | default([])) | length) -%}
+        {%- set client = (wg_clients_normalized | default([]))[i] -%}
+        {%- if _peer_count > 0 -%}
+          {%- for p_idx in range(_peer_count) -%}
+            {%- set selected_peer = stable_peers[p_idx] -%}
+            {%- for mode in ['split', 'full'] -%}
+            {%- set profile_name = client.name ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+            {%- set mode_offset = 0 if mode == 'split' else _peer_count -%}
+            {%- set ip_octet = 100 + i * (_peer_count * 2) + mode_offset + p_idx -%}
+            {%- set _ = result.append({
+              'name': client.name,
+              'apply_rules': (mode == 'split'),
+              'mode': mode,
+              'selected_peer': selected_peer,
+              'profile_name': profile_name,
+              'key_id': profile_name,
+              'listen_port': (wg.port | default(51821) | int) + p_idx,
+              'ip': _base ~ '.' ~ ip_octet
+            }) -%}
+            {%- endfor -%}
+          {%- endfor -%}
+        {%- endif -%}
+      {%- endfor -%} {{ result }}
+
+  when: wg.subnet is defined
+
+- name: Check if WireGuard profile private keys exist
+  ansible.builtin.stat:
+    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
+  loop: '{{ wg_client_profiles | default([]) }}'
   register: _wg_peer_key_stats
   delegate_to: localhost
   become: false
   when: wg.subnet is defined
 
-- name: Generate WireGuard peer private keys
+- name: Generate WireGuard profile private keys
   ansible.builtin.shell: |
     python3 -c "
     import base64
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     key = X25519PrivateKey.generate()
     print(base64.b64encode(key.private_bytes_raw()).decode())
-    " > {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
-    chmod 0600 {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.name }}.key
+    " > {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key
+    chmod 0600 {{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key
   loop: '{{ _wg_peer_key_stats.results | default([]) }}'
   when:
     - wg.subnet is defined
@@ -131,11 +215,11 @@
     python3 -c "
     import base64
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-    priv = base64.b64decode(open('{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.name }}.key').read().strip())
+    priv = base64.b64decode(open('{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key').read().strip())
     pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
     print(base64.b64encode(pub).decode())
     "
-  loop: '{{ wg_clients_normalized | default([]) }}'
+  loop: '{{ wg_client_profiles | default([]) }}'
   register: _wg_peer_pubkeys
   changed_when: false
   delegate_to: localhost
@@ -145,32 +229,63 @@
 - name: Build enriched WireGuard peer list with public keys
   ansible.builtin.set_fact:
     wireguard_clients_with_keys: >-
-      {%- set result = [] -%} {%- set _base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- for i in range((wg_clients_normalized | default([])) | length) -%}
-        {%- set peer = (wg_clients_normalized | default([]))[i] -%}
+      {%- set result = [] -%} {%- for i in range((wg_client_profiles | default([])) | length) -%}
+        {%- set profile = (wg_client_profiles | default([]))[i] -%}
         {%- set pubkey = _wg_peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append({'name': peer.name, 'apply_rules': peer.apply_rules, 'ip': _base ~ '.' ~ (100 + i), 'public_key': pubkey}) -%}
+        {%- set _ = result.append(profile | combine({'public_key': pubkey})) -%}
       {%- endfor -%} {{ result }}
+
   when: wg.subnet is defined
 
 - name: Render WireGuard client configs
   ansible.builtin.template:
     src: wireguard/client.conf.j2
-    dest: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}/{{ wg_peer.name }}.conf'
+    dest: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}/{{ wg_peer.name }}/{{ wg_peer.profile_name }}.conf'
     mode: '0600'
   loop: '{{ wireguard_clients_with_keys | default([]) }}'
   loop_control:
     loop_var: wg_peer
   vars:
     peer: '{{ wg_peer }}'
-    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/wireguard/keys/' ~ inventory_hostname ~ '/' ~ wg_peer.name ~ '.key') }}"
+    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/wireguard/keys/' ~ inventory_hostname ~ '/' ~ wg_peer.key_id ~ '.key') }}"
   delegate_to: localhost
   become: false
   when: wg.subnet is defined
 
+- name: Build enriched VLESS client profile list
+  ansible.builtin.set_fact:
+    vless_clients_with_credentials: >-
+      {%- set result = [] -%} {%- for client in vless_clients_with_credentials | default([]) -%}
+        {%- for selected_peer in stable_peers | default([]) -%}
+          {%- set profile_name = client.name ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- set _ = result.append({
+            'name': client.name,
+            'auth_user': profile_name,
+            'profile_name': profile_name,
+            'selected_peer': selected_peer,
+            'uuid': client.uuid
+          }) -%}
+        {%- endfor -%}
+      {%- endfor -%} {{ result }}
+
+  when:
+    - (vless_clients_with_credentials | default([]) | length) > 0
+
+- name: Create local VLESS client config subdirectories
+  ansible.builtin.file:
+    path: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ item }}'
+    state: directory
+    mode: '0755'
+  loop: '{{ vless_clients_with_credentials | default([]) | map(attribute="name") | unique | list }}'
+  delegate_to: localhost
+  become: false
+  when:
+    - (vless_clients_with_credentials | default([]) | length) > 0
+
 - name: Render VLESS Reality client URI profiles
   ansible.builtin.template:
     src: vless/client-uri.txt.j2
-    dest: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ vless_peer.name }}.txt'
+    dest: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ vless_peer.name }}/{{ vless_peer.profile_name }}.txt'
     mode: '0600'
   loop: '{{ vless_clients_with_credentials | default([]) }}'
   loop_control:

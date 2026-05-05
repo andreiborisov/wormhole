@@ -33,10 +33,10 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - /lib/modules:/lib/modules:ro
-      - ./amneziawg/awg-in.conf:/opt/amnezia/awg/awg-in.conf:ro
+      - ./amneziawg:/opt/amnezia/awg:ro
       - ./amneziawg/docker-entrypoint.fish:/opt/amnezia/docker-entrypoint.fish:ro
     healthcheck:
-      test: ["CMD", "awg", "show", "awg-in"]
+      test: ["CMD-SHELL", "awg show | grep -q '^interface: awg-in-'"]
       interval: 10s
       timeout: 5s
       retries: 3

@@ -5,14 +5,17 @@
       {%- set result = [] -%}
       {%- for client in clients | default([]) -%}
         {%- if client is mapping -%}
-          {%- set _ = result.append({
-            'name': client.name,
-            'uuid': client.uuid | default('')
-          }) -%}
+          {%- set client_name = client.name -%}
+          {%- set client_uuid = client.uuid | default('') -%}
         {%- else -%}
+          {%- set client_name = client -%}
+          {%- set client_uuid = '' -%}
+        {%- endif -%}
+        {%- if client_name not in (result | map(attribute='name') | list) -%}
           {%- set _ = result.append({
-            'name': client,
-            'uuid': ''
+            'name': client_name,
+            'uuid': client_uuid,
+            'client_id': client_name
           }) -%}
         {%- endif -%}
       {%- endfor -%}
@@ -76,7 +79,7 @@
 
 - name: Check if VLESS client UUID files exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.name }}.uuid'
+    path: '{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.client_id }}.uuid'
   loop: '{{ vless_clients_normalized }}'
   register: _vless_client_uuid_stats
   delegate_to: localhost
@@ -87,9 +90,9 @@
     python3 - <<'PY'
     import pathlib
     import uuid
-    pathlib.Path("{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.name }}.uuid").write_text(str(uuid.uuid4()) + "\n")
+    pathlib.Path("{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid").write_text(str(uuid.uuid4()) + "\n")
     PY
-    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.name }}.uuid"
+    chmod 0600 "{{ playbook_dir }}/local/vless/keys/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid"
   loop: '{{ _vless_client_uuid_stats.results | default([]) }}'
   when:
     - item.item.uuid | length == 0
@@ -110,7 +113,7 @@
     client_with_uuid: >-
       {{
         item | combine({
-          'uuid': (item.uuid if item.uuid | length > 0 else (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/' ~ item.name ~ '.uuid') | trim))
+          'uuid': (item.uuid if item.uuid | length > 0 else (lookup('file', playbook_dir ~ '/local/vless/keys/' ~ inventory_hostname ~ '/' ~ item.client_id ~ '.uuid') | trim))
         })
       }}
   loop: '{{ vless_clients_normalized }}'

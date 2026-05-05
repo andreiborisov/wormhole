@@ -1,8 +1,10 @@
-{%- set _net = awg.subnet.split('/') -%}
+{%- set _selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
+{%- set _net = _selected_awg_subnet.split('/') -%}
 {%- set _base = _net[0].rsplit('.', 1)[0] -%}
 [Interface]
+# peer = {{ selected_peer }}
 Address    = {{ _base }}.1/{{ _net[1] }}
-ListenPort = {{ awg.port }}
+ListenPort = {{ (awg.port | int) + p_idx }}
 PrivateKey = {{ awg_private_key }}
 {% if awg.jc is defined %}
 Jc   = {{ awg.jc }}
@@ -52,7 +54,7 @@ I4   = {{ awg.i4 }}
 {% if awg.i5 is defined %}
 I5   = {{ awg.i5 }}
 {% endif %}
-{% for peer in awg_clients_with_keys | default([]) %}
+{% for peer in (awg_clients_with_keys | default([]) | selectattr('selected_peer', 'equalto', selected_peer)) %}
 
 [Peer]
 # {{ peer.name }}
