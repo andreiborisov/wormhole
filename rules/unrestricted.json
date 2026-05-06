@@ -2,7 +2,24 @@
   "version": 4,
   "rules": [
     {
-      "domain_suffix": []
+      "domain_suffix": ["sberbank.ru", "tbank.ru"]
+    },
+    {
+      "domain_suffix": ["kinopoisk.ru"]
+    },
+    {
+      "domain_suffix": ["gosuslugi.ru", "mid.ru", "mos.ru"]
+    },
+    {
+      "domain_suffix": ["cdek.ru", "pochta.ru"]
+    },
+    {
+      "domain_suffix": [
+        "aliexpress.ru",
+        "avito.ru",
+        "ozon.ru",
+        "wildberries.ru"
+      ]
     }
   ]
 }
