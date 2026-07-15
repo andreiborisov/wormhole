@@ -406,6 +406,11 @@
     },
     {
       "domain_suffix": [
+        "apple.com"
+      ]
+    },
+    {
+      "domain_suffix": [
         "sofi.com"
       ]
     },
@@ -1124,6 +1129,7 @@
         "folivora.ai",
         "linear.app",
         "notion.so",
+        "notion-static.com",
         "raycast.com",
         "raycast-releases.com"
       ]

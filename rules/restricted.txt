@@ -389,6 +389,7 @@ openai.com
 2600:9000:ad00::/40
 2600:9000:ae00::/40
 2600:9000:af00::/40
+apple.com
 sofi.com
 opendesign.com
 openifcviewer.com
