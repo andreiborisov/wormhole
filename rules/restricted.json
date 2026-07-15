@@ -1219,6 +1219,7 @@
         "23.227.32.0/19"
       ]
     },
+    { "domain_suffix": ["spotify.com", "spotifycdn.com"] },
     {
       "domain_suffix": [
         "t.me",

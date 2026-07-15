@@ -1148,6 +1148,8 @@ kickstarter.com
 nike.com
 uniqlo.com
 23.227.32.0/19
+spotify.com
+spotifycdn.com
 t.me
 telegram.org
 91.105.192.0/23
