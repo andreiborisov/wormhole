@@ -1782,6 +1782,11 @@
         "youtube.com",
         "ytimg.com"
       ]
+    },
+    {
+      "domain_suffix": [
+        "zoom.us"
+      ]
     }
   ]
 }
