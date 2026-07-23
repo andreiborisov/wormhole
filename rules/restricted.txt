@@ -1093,6 +1093,7 @@ diabrowser.engineering
 folivora.ai
 linear.app
 notion.so
+notion-static.com
 raycast.com
 raycast-releases.com
 discord.com
