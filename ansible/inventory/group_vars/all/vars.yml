@@ -1,6 +1,6 @@
 image_tags:
-  amneziawg: 'latest'
-  sing_box: 'v1.13.11'
+  amneziawg: '0.2.19'
+  sing_box: 'v1.13.14'
 
 log:
   level: 'warn'
