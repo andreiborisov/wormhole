@@ -12,6 +12,7 @@
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
 DNS        = {{ _awg_base }}.53
+MTU        = {{ 1420 - (awg.s4 | default(0) | int) }}
 {% if awg.jc is defined %}
 Jc   = {{ awg.jc }}
 {% endif %}

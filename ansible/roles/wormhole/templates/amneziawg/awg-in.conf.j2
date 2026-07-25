@@ -6,6 +6,7 @@
 Address    = {{ _base }}.1/{{ _net[1] }}
 ListenPort = {{ (awg.port | int) + p_idx }}
 PrivateKey = {{ awg_private_key }}
+MTU        = {{ 1420 - (awg.s4 | default(0) | int) }}
 {% if awg.jc is defined %}
 Jc   = {{ awg.jc }}
 {% endif %}

@@ -1,3 +1,6 @@
 [submodule "references/amnezia-client"]
 	path = references/amnezia-client
 	url = git@github.com:amnezia-vpn/amnezia-client.git
+[submodule "references/mini_quic_generator"]
+	path = references/mini_quic_generator
+	url = git@github.com:SagePtr/mini_quic_generator.git
