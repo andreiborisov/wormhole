@@ -1,0 +1,23 @@
+# Local VLESS Reality client for testing against wormhole nodes.
+# Exposes SOCKS5/HTTP on 127.0.0.1:2080 only — does NOT touch system routing.
+#
+# Usage:
+#   docker compose up -d
+#   curl -x http://127.0.0.1:2080 https://ifconfig.me
+#   docker compose logs -f
+#   docker compose down
+
+services:
+  sing-box:
+    image: ghcr.io/sagernet/sing-box:v1.13.14
+    container_name: wormhole-vless-client
+    # Bridge + published localhost port (not host network) so host SSH/DNS stay unaffected.
+    ports:
+      - "127.0.0.1:2080:2080"
+    volumes:
+      - ./config.json:/etc/sing-box/config.json:ro
+    command:
+      - -c
+      - /etc/sing-box/config.json
+      - run
+    restart: "no"

@@ -5,6 +5,9 @@ ansible/inventory/host_vars/
 # Generates files
 ansible/local/
 
+# Local VLESS test client (contains live Reality credentials)
+local-vless-client/config.json
+
 # Ansible Vault password file
 .vault-password
 
