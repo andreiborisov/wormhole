@@ -1686,3 +1686,4 @@ youtube.com
 ytimg.com
 zoom.us
 retn.net
+retn.net.prod.hosts.ooklaserver.net
