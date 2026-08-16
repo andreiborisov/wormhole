@@ -32,17 +32,19 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 brew bundle
 ```
 
-### 2. Configure your inventory
+### 2. Configure an inventory
+
+Each deployment is a directory under `ansible/inventories/` (gitignored). Copy the example and name it after the deployment:
 
 ```fish
-cp ansible/inventory/hosts.local.yml.example ansible/inventory/hosts.local.yml
+cp -R ansible/inventories.example ansible/inventories/production
 ```
 
-Edit `hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and the GitHub raw URL for your rules.
+Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and the GitHub raw URL for your rules.
 
 ### 3. Fill in secrets
 
-Edit `ansible/inventory/group_vars/all/vault.yml` with a real Tailscale auth key and a strong Hysteria2 password:
+Edit `ansible/inventories/production/group_vars/all/vault.yml` with a real Tailscale auth key and a strong Hysteria2 password:
 
 ```fish
 # Generate a password:
@@ -55,10 +57,10 @@ openssl rand -base64 32
 ### 4. Run setup
 
 ```fish
-fish setup.fish
+fish setup.fish production
 ```
 
-This will bootstrap SSH key authentication on all nodes, encrypt your secrets, install Ansible collections, and provision everything end to end.
+The inventory name is required and must match a directory under `ansible/inventories/`. This will bootstrap SSH key authentication on all nodes, encrypt your secrets, install Ansible collections, and provision everything end to end.
 
 ## ⚙️ Configuration
 
@@ -77,10 +79,11 @@ Then commit and push — nodes refresh the rule set from GitHub every 15 minutes
 
 ### Adding a node
 
-Add a new host to `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `restricted` flag, then re-run:
+Add a new host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `restricted` flag, then re-run:
 
 ```fish
-ansible-playbook ansible/site.yml
+cd ansible
+ansible-playbook -i inventories/production site.yml
 ```
 
 ### Updating sing-box
@@ -97,13 +100,14 @@ rules/                          # Remote rule sets (hosted on GitHub)
 ansible/
   site.yml                      # Full provisioning playbook
   bootstrap.yml                 # One-time SSH key setup
-  inventory/
-    hosts.local.yml.example     # Template — copy and fill in
+  inventories.example/          # Template — copy to inventories/<name>
+    hosts.local.yml
     group_vars/all/
-      vars.yml                  # Shared config
-      vault.yml                 # Encrypted secrets
+      vars.yml                  # Per-deployment config
+      vault.yml                 # Secrets (encrypted after setup)
+  inventories/<name>/           # Live inventories (gitignored)
+  local/<name>/                 # Generated keys and client configs
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
     templates/sing-box/         # Jinja2 config template
-    files/docker-compose.yml    # Container definition
 ```

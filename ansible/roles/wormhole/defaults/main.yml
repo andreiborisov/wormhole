@@ -1,5 +1,6 @@
 ---
 deploy_dir: /root/wormhole
+local_dir: '{{ playbook_dir }}/local/{{ inventory_dir | basename }}'
 tcp_congestion_control: 'bbr'
 awg:
   port: 51820

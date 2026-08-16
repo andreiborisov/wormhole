@@ -5,7 +5,7 @@
 
 - name: Create local peer config directories
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}'
+    path: '{{ local_dir }}/amneziawg/configs/{{ inventory_hostname }}'
     state: directory
     mode: '0755'
   delegate_to: localhost
@@ -23,7 +23,7 @@
 
 - name: Create local AmneziaWG client config subdirectories
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ item.name }}'
+    path: '{{ local_dir }}/amneziawg/configs/{{ inventory_hostname }}/{{ item.name }}'
     state: directory
     mode: '0755'
   loop: '{{ awg_clients_normalized | default([]) }}'
@@ -64,7 +64,7 @@
 
 - name: Check if AmneziaWG profile private keys exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
+    path: '{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
   loop: '{{ awg_client_profiles | default([]) }}'
   register: _peer_key_stats
   delegate_to: localhost
@@ -73,7 +73,7 @@
 - name: Generate AmneziaWG profile private keys
   ansible.builtin.shell: |
     set -eu
-    key_path="{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key"
+    key_path="{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key"
     wg genkey > "$key_path"
     chmod 0600 "$key_path"
   loop: '{{ _peer_key_stats.results }}'
@@ -86,7 +86,7 @@
 
 - name: Derive AmneziaWG profile public keys
   ansible.builtin.shell: |
-    key_path="{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key"
+    key_path="{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/{{ item.key_id }}.key"
     wg pubkey < "$key_path"
   loop: '{{ awg_client_profiles | default([]) }}'
   register: _peer_pubkeys
@@ -109,20 +109,20 @@
 - name: Render client VPN configs
   ansible.builtin.template:
     src: amneziawg/client.conf.j2
-    dest: '{{ playbook_dir }}/local/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}/{{ awg_peer.profile_name }}.conf'
+    dest: '{{ local_dir }}/amneziawg/configs/{{ inventory_hostname }}/{{ awg_peer.name }}/{{ awg_peer.profile_name }}.conf'
     mode: '0600'
   loop: '{{ awg_clients_with_keys | default([]) }}'
   loop_control:
     loop_var: awg_peer
   vars:
     peer: '{{ awg_peer }}'
-    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.key_id ~ '.key') }}"
+    peer_private_key: "{{ lookup('file', local_dir ~ '/amneziawg/keys/' ~ inventory_hostname ~ '/' ~ awg_peer.key_id ~ '.key') }}"
   delegate_to: localhost
   become: false
 
 - name: Create local WireGuard peer config directory
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}'
+    path: '{{ local_dir }}/wireguard/configs/{{ inventory_hostname }}'
     state: directory
     mode: '0755'
   delegate_to: localhost
@@ -143,7 +143,7 @@
 
 - name: Create local WireGuard client config subdirectories
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}/{{ item.name }}'
+    path: '{{ local_dir }}/wireguard/configs/{{ inventory_hostname }}/{{ item.name }}'
     state: directory
     mode: '0755'
   loop: '{{ wg_clients_normalized | default([]) }}'
@@ -182,7 +182,7 @@
 
 - name: Check if WireGuard profile private keys exist
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
+    path: '{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key'
   loop: '{{ wg_client_profiles | default([]) }}'
   register: _wg_peer_key_stats
   delegate_to: localhost
@@ -192,7 +192,7 @@
 - name: Generate WireGuard profile private keys
   ansible.builtin.shell: |
     set -eu
-    key_path="{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key"
+    key_path="{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/{{ item.item.key_id }}.key"
     wg genkey > "$key_path"
     chmod 0600 "$key_path"
   loop: '{{ _wg_peer_key_stats.results | default([]) }}'
@@ -207,7 +207,7 @@
 
 - name: Derive WireGuard peer public keys
   ansible.builtin.shell: |
-    key_path="{{ playbook_dir }}/local/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key"
+    key_path="{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/{{ item.key_id }}.key"
     wg pubkey < "$key_path"
   loop: '{{ wg_client_profiles | default([]) }}'
   register: _wg_peer_pubkeys
@@ -232,14 +232,14 @@
 - name: Render WireGuard client configs
   ansible.builtin.template:
     src: wireguard/client.conf.j2
-    dest: '{{ playbook_dir }}/local/wireguard/configs/{{ inventory_hostname }}/{{ wg_peer.name }}/{{ wg_peer.profile_name }}.conf'
+    dest: '{{ local_dir }}/wireguard/configs/{{ inventory_hostname }}/{{ wg_peer.name }}/{{ wg_peer.profile_name }}.conf'
     mode: '0600'
   loop: '{{ wireguard_clients_with_keys | default([]) }}'
   loop_control:
     loop_var: wg_peer
   vars:
     peer: '{{ wg_peer }}'
-    peer_private_key: "{{ lookup('file', playbook_dir ~ '/local/wireguard/keys/' ~ inventory_hostname ~ '/' ~ wg_peer.key_id ~ '.key') }}"
+    peer_private_key: "{{ lookup('file', local_dir ~ '/wireguard/keys/' ~ inventory_hostname ~ '/' ~ wg_peer.key_id ~ '.key') }}"
   delegate_to: localhost
   become: false
   when: wg.subnet is defined
@@ -265,7 +265,7 @@
 
 - name: Create local VLESS client config subdirectories
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ item }}'
+    path: '{{ local_dir }}/vless/configs/{{ inventory_hostname }}/{{ item }}'
     state: directory
     mode: '0755'
   loop: '{{ vless_clients_with_credentials | default([]) | map(attribute="name") | unique | list }}'
@@ -277,7 +277,7 @@
 - name: Render VLESS Reality client URI profiles
   ansible.builtin.template:
     src: vless/client-uri.txt.j2
-    dest: '{{ playbook_dir }}/local/vless/configs/{{ inventory_hostname }}/{{ vless_peer.name }}/{{ vless_peer.profile_name }}.txt'
+    dest: '{{ local_dir }}/vless/configs/{{ inventory_hostname }}/{{ vless_peer.name }}/{{ vless_peer.profile_name }}.txt'
     mode: '0600'
   loop: '{{ vless_clients_with_credentials | default([]) }}'
   loop_control:

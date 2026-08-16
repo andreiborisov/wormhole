@@ -1,7 +1,7 @@
 ---
 - name: Create local AWG key directory
   ansible.builtin.file:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}'
+    path: '{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}'
     state: directory
     mode: '0700'
   delegate_to: localhost
@@ -9,7 +9,7 @@
 
 - name: Check if local AWG server private key exists
   ansible.builtin.stat:
-    path: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+    path: '{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/server.key'
   register: _local_awg_server_key_stat
   delegate_to: localhost
   become: false
@@ -31,7 +31,7 @@
 - name: Persist existing remote AWG private key locally
   ansible.builtin.copy:
     content: "{{ _remote_awg_privkey_b64.content | b64decode | trim }}\n"
-    dest: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+    dest: '{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/server.key'
     mode: '0600'
   when:
     - not _local_awg_server_key_stat.stat.exists
@@ -43,7 +43,7 @@
 - name: Generate local AWG server private key
   ansible.builtin.shell: |
     set -eu
-    key_path="{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key"
+    key_path="{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/server.key"
     wg genkey > "$key_path"
     chmod 0600 "$key_path"
   when:
@@ -57,19 +57,19 @@
 
 - name: Copy AWG private key to server
   ansible.builtin.copy:
-    src: '{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key'
+    src: '{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/server.key'
     dest: '{{ deploy_dir }}/amneziawg/private.key'
     mode: '0600'
   no_log: true
 
 - name: Set awg_private_key fact
   ansible.builtin.set_fact:
-    awg_private_key: "{{ lookup('file', playbook_dir ~ '/local/amneziawg/keys/' ~ inventory_hostname ~ '/server.key') | trim }}"
+    awg_private_key: "{{ lookup('file', local_dir ~ '/amneziawg/keys/' ~ inventory_hostname ~ '/server.key') | trim }}"
   no_log: true
 
 - name: Derive AWG public key locally
   ansible.builtin.shell: |
-    key_path="{{ playbook_dir }}/local/amneziawg/keys/{{ inventory_hostname }}/server.key"
+    key_path="{{ local_dir }}/amneziawg/keys/{{ inventory_hostname }}/server.key"
     wg pubkey < "$key_path"
   register: _awg_pubkey
   changed_when: false

@@ -5,7 +5,7 @@
 # Safe to re-run: hosts already reachable by key are skipped automatically.
 #
 # Usage:
-#   ansible-playbook bootstrap.yml
+#   ansible-playbook -i inventories/production bootstrap.yml
 
 - name: Collect credentials
   hosts: localhost

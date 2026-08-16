@@ -3,8 +3,8 @@
 # sing-box + AWG/WireGuard on all nodes.
 #
 # Usage:
-#   ansible-playbook site.yml --ask-vault-pass
-#   ansible-playbook site.yml --ask-vault-pass --tags client-configs
+#   ansible-playbook -i inventories/production site.yml
+#   ansible-playbook -i inventories/production site.yml --tags client-configs
 
 - name: Provision all nodes
   hosts: all

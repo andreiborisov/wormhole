@@ -1,9 +1,8 @@
 # Local inventory — contains hosts, IPs, URLs, and per-host vars; never commit
-ansible/inventory/hosts.local*.yml
-ansible/inventory/host_vars/
+ansible/inventories/
 
 # Generates files
-ansible/local*/
+ansible/local/
 
 # Local VLESS test client (contains live Reality credentials)
 local-vless-client/config.json

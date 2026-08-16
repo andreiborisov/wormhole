@@ -2,7 +2,7 @@
 # Render AWG/WireGuard client configs without full deployment.
 #
 # Usage:
-#   ansible-playbook render-client-configs.yml --ask-vault-pass
+#   ansible-playbook -i inventories/production render-client-configs.yml
 
 - name: Render AWG and WireGuard client configs
   hosts: all
