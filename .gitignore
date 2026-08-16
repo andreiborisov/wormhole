@@ -13,3 +13,6 @@ local-vless-client/config.json
 
 # Make sure to include VS Code settings
 !.vscode
+
+# Specstory history
+.specstory/
