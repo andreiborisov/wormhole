@@ -1,0 +1,18 @@
+- [] Add AdGuard Home and use it as a local DNS resolver
+- [] Optimzie AdGuard Home settings
+- [] Add ability for AWG/Wireguard clients to advertise subnets and route those subnets to other clients
+- [] Route subnets between nodes too
+- [] Add custom domains to AdGuard DNS records
+- [] Load, compress IP CIDRs automatically from upstream (GitHub Actions)
+- [] Split configuration files into categories
+- [] Allow to point to specific rulesets for each node (or perhaps a folder)
+- [] Generate .txt rules for GL.iNet routers (GitHub Actions) and host them on something that is available everywhere (like disk.yandex.ru)
+- [] Make sure everything is configurable and usable with multiple peers (generate multiple awg/wireguard configs to choose outbound wormhole used)
+- [] Cloud deployments (GitHub Actions)
+- [] Publish configuration files for clients to download (should be available everywhere, something like disk.yandex.ru)
+- [] Comprehensive monitoring solution
+- [] Comprehensive performance testing solution (latency, jitter, throuhgput, various protocol simulation), should run periodically, at least the server-side part
+- [] Fix upload speed (seems to be 443 traffic shaping)
+- [] Research options to penetrate when there are whitelists enabled, VLESS doesn't work so far
+- [] Generate split configuration for Shadowrocket proxy
+- [] Research what can be the issue with Wireguard connectivity
