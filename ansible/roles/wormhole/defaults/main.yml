@@ -8,6 +8,7 @@ wg:
   port: 51822
 vless:
   port: 443
+  handshake_port: 443
   domain: 'www.cloudflare.com'
   max_time_difference: '1m'
   client_fingerprint: 'chrome'

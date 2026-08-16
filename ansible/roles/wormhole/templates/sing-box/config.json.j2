@@ -164,7 +164,7 @@
           "enabled": true,
           "handshake": {
             "server": "{{ vless.domain }}",
-            "server_port": 443
+            "server_port": {{ vless.handshake_port | int }}
           },
           "private_key": "{{ vless.private_key }}",
           "short_id": ["{{ vless.short_id }}"],
