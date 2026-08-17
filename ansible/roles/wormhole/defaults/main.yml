@@ -12,3 +12,4 @@ vless:
   domain: 'www.cloudflare.com'
   max_time_difference: '1m'
   client_fingerprint: 'chrome'
+  grpc_service_name: 'api.v1.Gateway'

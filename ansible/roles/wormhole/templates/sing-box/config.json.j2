@@ -151,8 +151,7 @@
 {% for client in _vless_clients %}
         {
           "name": "{{ client.auth_user }}",
-          "uuid": "{{ client.uuid }}",
-          "flow": "xtls-rprx-vision"
+          "uuid": "{{ client.uuid }}"
         }{% if not loop.last %},{% endif %}
 {% endfor %}
       ],
@@ -170,6 +169,10 @@
           "short_id": ["{{ vless.short_id }}"],
           "max_time_difference": "{{ vless.max_time_difference }}"
         }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "{{ vless.grpc_service_name }}"
       }
     }
 {% else %}

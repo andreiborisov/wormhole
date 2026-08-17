@@ -4,6 +4,9 @@ ansible/inventories/
 # Generates files
 ansible/local/
 
+# Local client tools (miniooni, etc.) under tools/bin/
+tools/
+
 # Local VLESS test client (contains live Reality credentials)
 local-vless-client/config.json
 
