@@ -184,6 +184,17 @@
     provider: selfsigned
     selfsigned_not_after: '+3650d'
 
+# ── Rule catalog (localhost compose) ─────────────────────────────────────────
+
+- name: Compose named rule sets for this node's profile
+  ansible.builtin.include_tasks:
+    file: compose-rules.yml
+    apply:
+      tags:
+        - always
+  tags:
+    - always
+
 # ── Client configs (rendered locally) ────────────────────────────────────────
 
 - name: Render AWG client configs locally

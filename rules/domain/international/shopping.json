@@ -1,0 +1,22 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "amazon.com",
+        "amazon.co.jp",
+        "amazon.co.uk",
+        "amazon.de",
+        "bricklink.com",
+        "ebay.com",
+        "ebaydesc.com",
+        "ebayimg.com",
+        "etsy.com",
+        "ikea.com",
+        "kickstarter.com",
+        "nike.com",
+        "uniqlo.com"
+      ]
+    }
+  ]
+}

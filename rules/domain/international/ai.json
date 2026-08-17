@@ -1,0 +1,15 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "anthropic.com",
+        "chatgpt.com",
+        "claude.ai",
+        "grammarly.com",
+        "openai.com",
+        "reverso.net"
+      ]
+    }
+  ]
+}

@@ -3,8 +3,8 @@
 {%- set deterministic_peers = peers | unique | sort -%}
 
 {# --- DNS/rule sources and advertised prefixes --- #}
-{%- set _rules_file = lookup('file', playbook_dir ~ '/../rules/' ~ ('restricted' if restricted else 'unrestricted') ~ '.json') | from_json -%}
-{%- set _rules_ip_cidrs = _rules_file.rules | map(attribute='ip_cidr', default=[]) | flatten -%}
+{%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
+{%- set _domain_set_names = wormhole_composed.domain_sets | default([]) | map(attribute='name') | list -%}
 {%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
 {%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
@@ -31,16 +31,16 @@
         "query_type": ["HTTPS"],
         "action": "reject",
         "reject_code": 3
-      },
+      }{% if _domain_set_names %},
       {
-        "rule_set": ["route-rules"],
+        "rule_set": {{ _domain_set_names | to_json }},
         "query_type": ["A", "AAAA"],
         "server": "fakeip"
       },
       {
-        "rule_set": ["route-rules"],
+        "rule_set": {{ _domain_set_names | to_json }},
         "server": "upstream-local"
-      }{% if peer_custom_rules %},
+      }{% endif %}{% if peer_custom_rules %},
       {
         "domain_suffix": {{ peer_custom_rules | to_json }},
         "query_type": ["A", "AAAA"],
@@ -217,13 +217,15 @@
   "route": {
     "auto_detect_interface": true,
     "rule_set": [
+{% for domain_set in wormhole_composed.domain_sets | default([]) %}
       {
-        "tag": "route-rules",
+        "tag": "{{ domain_set.name }}",
         "type": "remote",
         "format": "source",
-        "url": "{{ rule_set.base_url }}/{{ 'restricted' if restricted else 'unrestricted' }}.json",
+        "url": "{{ rule_set.base_url }}/{{ domain_set.url_suffix }}",
         "update_interval": "5m"
-      }
+      }{% if not loop.last %},{% endif %}
+{% endfor %}
     ],
     "default_domain_resolver": {
       "server": "upstream-local"

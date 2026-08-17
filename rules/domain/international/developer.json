@@ -1,0 +1,21 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "opendesign.com",
+        "openifcviewer.com",
+        "arc.net",
+        "cursor.sh",
+        "diabrowser.com",
+        "diabrowser.engineering",
+        "folivora.ai",
+        "linear.app",
+        "notion.so",
+        "notion-static.com",
+        "raycast.com",
+        "raycast-releases.com"
+      ]
+    }
+  ]
+}

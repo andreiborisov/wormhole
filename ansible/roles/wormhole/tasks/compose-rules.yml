@@ -1,0 +1,35 @@
+---
+- name: Require rules.profile
+  ansible.builtin.assert:
+    that:
+      - rules is defined
+      - rules.profile is defined
+      - rules.profile | length > 0
+    fail_msg: Set rules.profile to ru or non-ru on this host
+
+- name: Build compose argv
+  ansible.builtin.set_fact:
+    wormhole_compose_argv: "{{ ['node', playbook_dir ~ '/../scripts/compose_rules.mjs', '--profile', rules.profile] }}"
+
+- name: Add extra include set names
+  ansible.builtin.set_fact:
+    wormhole_compose_argv: "{{ wormhole_compose_argv + ['--include=' ~ item] }}"
+  loop: '{{ rules.include | default([]) }}'
+
+- name: Add extra exclude set names
+  ansible.builtin.set_fact:
+    wormhole_compose_argv: "{{ wormhole_compose_argv + ['--exclude=' ~ item] }}"
+  loop: '{{ rules.exclude | default([]) }}'
+
+- name: Compose rule sets
+  ansible.builtin.command:
+    argv: "{{ wormhole_compose_argv }}"
+    chdir: '{{ playbook_dir }}/..'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: wormhole_rules_raw
+
+- name: Expose composed rule sets
+  ansible.builtin.set_fact:
+    wormhole_composed: '{{ wormhole_rules_raw.stdout | from_json }}'

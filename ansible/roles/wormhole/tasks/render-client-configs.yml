@@ -1,4 +1,8 @@
 ---
+- name: Compose named rule sets for this node's profile
+  ansible.builtin.include_tasks:
+    file: compose-rules.yml
+
 - name: Build deterministic peer list
   ansible.builtin.set_fact:
     stable_peers: '{{ (peers | default([]) | unique | sort) }}'

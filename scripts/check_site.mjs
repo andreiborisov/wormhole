@@ -21,11 +21,11 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BlockList, isIP } from 'node:net'
+import { composeRules } from './compose_rules.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
 const miniooniBin = join(root, 'tools/bin/miniooni')
-const rulesPath = join(root, 'rules/restricted.json')
 const fakeIpCidr = '198.18.0.0/15'
 
 const handshakeBlocked = new Set([
@@ -44,6 +44,7 @@ function usage(stream = process.stdout) {
   only — not from wormhole nodes.
 
 Options:
+  --profile NAME        Rule profile for PATH checks (default: ru)
   --json                Print the diagnosis as JSON on stdout
   --verbose             Show miniooni logs on stderr
   --keep-report PATH    Copy the OONI JSONL report to PATH
@@ -75,6 +76,7 @@ function parseArgs(argv) {
     keepReport: null,
     controlIp: '1.1.1.1',
     controlSni: 'example.com',
+    profile: 'ru',
     url: null,
   }
 
@@ -111,6 +113,13 @@ function parseArgs(argv) {
         ? arg.slice('--control-sni='.length)
         : argv[++i]
       if (!opts.controlSni) die('--control-sni needs a name')
+      continue
+    }
+    if (arg === '--profile' || arg.startsWith('--profile=')) {
+      opts.profile = arg.includes('=')
+        ? arg.slice('--profile='.length)
+        : argv[++i]
+      if (!opts.profile) die('--profile needs a name')
       continue
     }
     if (arg === '--') {
@@ -202,31 +211,6 @@ function readJsonl(path) {
     }
   }
   return measurements
-}
-
-function loadRestricted(path) {
-  const cidrs = []
-  const suffixes = []
-  const domains = []
-  if (!existsSync(path)) {
-    return { cidrs, suffixes, domains }
-  }
-
-  const payload = JSON.parse(readFileSync(path, 'utf8'))
-  const rules = Array.isArray(payload?.rules) ? payload.rules : []
-  for (const rule of rules) {
-    if (!rule || typeof rule !== 'object') continue
-    for (const cidr of rule.ip_cidr || []) {
-      if (typeof cidr === 'string') cidrs.push(cidr)
-    }
-    for (const suffix of rule.domain_suffix || []) {
-      if (typeof suffix === 'string') suffixes.push(suffix)
-    }
-    for (const domain of rule.domain || []) {
-      if (typeof domain === 'string') domains.push(domain)
-    }
-  }
-  return { cidrs, suffixes, domains }
 }
 
 function parseCidr(cidr) {
@@ -587,7 +571,7 @@ function decideVerdict({ wc, path, sni, followupIps }) {
       return {
         verdict: 'inconclusive',
         summary:
-          'Network legs looked reachable, but resolved IPs are in restricted.json (Wormhole may steal this probe)',
+          'Network legs looked reachable, but resolved IPs are in advertised CIDRs for this profile (Wormhole may steal this probe)',
       }
     }
     if (tlsBlocked) {
@@ -634,7 +618,7 @@ function printHuman(result) {
       pad(
         'PATH',
         'listed',
-        `${host} matches domain_suffix ${path.domain_listed} in rules/restricted.json`,
+        `${host} matches domain_suffix ${path.domain_listed} in the ${result.profile} profile`,
       ),
     )
   }
@@ -648,7 +632,7 @@ function printHuman(result) {
       ),
     )
   } else if (!path.domain_listed) {
-    console.log(pad('PATH', 'ok', 'not in rules/restricted.json ip_cidr'))
+    console.log(pad('PATH', 'ok', `not in ${result.profile} CIDR sets`))
   }
 
   const v4tcp = {}
@@ -755,6 +739,7 @@ function jsonOutput(result) {
   return {
     url: result.url,
     host: result.host,
+    profile: result.profile,
     miniooni: result.miniooni,
     verdict: result.verdict,
     summary: result.summary,
@@ -799,8 +784,14 @@ try {
   const version = miniooniVersion()
   if (!version) die('tools/bin/miniooni did not run')
 
-  const restricted = loadRestricted(rulesPath)
-  const parsedCidrs = [...restricted.cidrs, fakeIpCidr]
+  let composed
+  try {
+    composed = composeRules({ profile: opts.profile })
+  } catch (err) {
+    die(err.message)
+  }
+
+  const parsedCidrs = [...composed.advertise_cidrs, fakeIpCidr]
     .map(parseCidr)
     .filter(Boolean)
 
@@ -836,7 +827,10 @@ try {
       })
     }
   }
-  const domainListed = hostListed(host, restricted)
+  const domainListed = hostListed(host, {
+    suffixes: composed.domain_suffixes,
+    domains: [],
+  })
   const path = {
     contaminated: matches.length > 0,
     matches,
@@ -927,6 +921,7 @@ try {
   const result = {
     url,
     host,
+    profile: opts.profile,
     miniooni: version,
     verdict,
     summary,

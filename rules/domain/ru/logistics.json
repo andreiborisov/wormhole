@@ -1,0 +1,11 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "cdek.ru",
+        "pochta.ru"
+      ]
+    }
+  ]
+}

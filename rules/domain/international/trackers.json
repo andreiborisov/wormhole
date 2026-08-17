@@ -1,0 +1,15 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "appkp.cc",
+        "flibusta.is",
+        "kino.pub",
+        "rutor.is",
+        "rutracker.cc",
+        "rutracker.org"
+      ]
+    }
+  ]
+}

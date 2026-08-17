@@ -6,12 +6,12 @@
 
 ## 🧠 How it works
 
-Wormhole runs [sing-box](https://sing-box.sagernet.org) on two or more nodes:
+Wormhole runs [sing-box](https://sing-box.sagernet.org) on two or more nodes. Every node hijacks DNS and hairpins matching traffic the same way; only **which** domains and CIDRs it owns comes from its profile.
 
-- **Restricted nodes** — sit inside censored networks. They intercept DNS, return fake IPs for proxied domains, and forward matching traffic through an encrypted censorship-resistant tunnel to their peers.
-- **Unrestricted nodes** — sit in open networks. They receive tunnel traffic and send it out to the internet.
+- **ru nodes** — sit inside networks that block foreign services. They FakeIP-hijack DNS for selected domain sets, advertise matching CIDRs via Tailscale, and forward that traffic through an encrypted tunnel to a peer.
+- **non-ru nodes** — sit in open networks. They receive tunnel traffic and send it out, and can hijack a smaller catalog (typically Russian services) for clients that need those from abroad.
 
-Clients connect to the Tailscale network and route through the nearest restricted node transparently — no per-app configuration needed.
+Clients join the Tailscale network and route matching prefixes through the nearest node — no per-app configuration needed.
 
 The setup is fully symmetric: every node runs the same configuration and can peer with any other, so you can deploy as many nodes in as many regions as you need.
 
@@ -20,7 +20,8 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 ### Requirements
 
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
-- At least two fresh VPS instances with root access (one restricted, one unrestricted)
+- Node.js on the Ansible controller (used to compose rule sets at deploy time)
+- At least two fresh VPS instances with root access (one `ru`, one `non-ru`)
 
 #### For automatic setup
 
@@ -40,7 +41,7 @@ Each deployment is a directory under `ansible/inventories/` (gitignored). Copy t
 cp -R ansible/inventories.example ansible/inventories/production
 ```
 
-Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and the GitHub raw URL for your rules.
+Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, GitHub raw URL for rules, and each host's `rules.profile` (`ru` or `non-ru`).
 
 ### 3. Fill in secrets
 
@@ -64,22 +65,38 @@ The inventory name is required and must match a directory under `ansible/invento
 
 ## ⚙️ Configuration
 
-### Adding a domain to proxy
+### Rule catalog
 
-Edit `rules/restricted.json` and add the domain suffix:
+Named sets are paths under `rules/domain/` and `rules/cidr/` (no `.json`). The same path on both trees is one set (domains + CIDRs). A profile entry may be a file or a folder: `international` loads every international domain and CIDR, `international/social` only that subtree. Profiles `rules/profiles/ru.json` and `rules/profiles/non-ru.json` list which paths a node loads. A host can add or drop paths:
 
-```json
-{
-  "version": 4,
-  "rules": [{ "domain_suffix": ["example.com"] }]
-}
+```yaml
+rules:
+  profile: ru
+  include: [] # extra paths (file or folder)
+  exclude: [] # drop a path or subtree from the profile
 ```
 
-Then commit and push — nodes refresh the rule set from GitHub every 15 minutes automatically.
+Missing `rules.profile` fails the playbook.
+
+**Domains** are sing-box remote rule-sets (`update_interval: 5m`) and only affect FakeIP DNS. Edit a file under `rules/domain/ru/` or `rules/domain/international/`, commit, and push — nodes pick the change up on the next refresh.
+
+**CIDRs** are composed at deploy time into Tailscale `advertise_routes` and WireGuard / AmneziaWG `AllowedIPs`. Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
+
+```fish
+node scripts/compose_rules.mjs --profile ru
+node scripts/extract_rules_to_txt.mjs   # writes rules/profiles/ru.txt and non-ru.txt
+```
+
+From a client (not a mesh node), probe a site against a profile:
+
+```fish
+node scripts/check_site.mjs https://brew.sh/
+node scripts/check_site.mjs --profile non-ru --json https://ozon.ru/
+```
 
 ### Adding a node
 
-Add a new host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `restricted` flag, then re-run:
+Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `rules.profile`, then re-run:
 
 ```fish
 cd ansible
@@ -93,9 +110,22 @@ Pin a new version in `ansible/roles/wormhole/files/docker-compose.yml` and re-ru
 ## 🗂️ Structure
 
 ```
-rules/                          # Remote rule sets (hosted on GitHub)
-  restricted.json               # Domains proxied on restricted nodes
-  unrestricted.json             # Domains proxied on unrestricted nodes
+rules/
+  profiles/
+    ru.json                     # paths loaded on ru nodes
+    non-ru.json                 # paths loaded on non-ru nodes
+  domain/
+    ru/                         # Russian services (non-ru profile)
+    international/              # international (ru profile)
+      social/
+  cidr/
+    international/              # same tree as domain/; CIDR-only sets live here too
+      social/
+
+scripts/
+  compose_rules.mjs             # profile → domain sets + CIDR union
+  check_site.mjs                # client-vantage miniooni probe
+  extract_rules_to_txt.mjs      # flatten profiles to .txt
 
 ansible/
   site.yml                      # Full provisioning playbook
@@ -109,5 +139,6 @@ ansible/
   local/<name>/                 # Generated keys and client configs
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
+    tasks/compose-rules.yml     # Localhost Node compose for this host
     templates/sing-box/         # Jinja2 config template
 ```

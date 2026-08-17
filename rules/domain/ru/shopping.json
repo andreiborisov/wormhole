@@ -1,0 +1,13 @@
+{
+  "version": 4,
+  "rules": [
+    {
+      "domain_suffix": [
+        "aliexpress.ru",
+        "avito.ru",
+        "ozon.ru",
+        "wildberries.ru"
+      ]
+    }
+  ]
+}
