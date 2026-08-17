@@ -38,17 +38,13 @@
 - name: Build AmneziaWG client profile matrix
   ansible.builtin.set_fact:
     awg_client_profiles: >-
-      {%- set result = [] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for i in range((awg_clients_normalized | default([])) | length) -%}
-        {%- set client = (awg_clients_normalized | default([]))[i] -%}
+      {%- set result = [] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for client in awg_clients_normalized | default([]) -%}
         {%- if _peer_count > 0 -%}
           {%- for p_idx in range(_peer_count) -%}
             {%- set selected_peer = stable_peers[p_idx] -%}
             {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
-            {%- set _base = selected_awg_subnet.split('/')[0].rsplit('.', 1)[0] -%}
             {%- for mode in ['split', 'full'] -%}
             {%- set profile_name = client.name ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
-            {%- set mode_offset = 0 if mode == 'split' else _peer_count -%}
-            {%- set ip_octet = 100 + i * (_peer_count * 2) + mode_offset + p_idx -%}
             {%- set _ = result.append({
               'name': client.name,
               'apply_rules': (mode == 'split'),
@@ -57,13 +53,32 @@
               'profile_name': profile_name,
               'key_id': profile_name,
               'awg_subnet': selected_awg_subnet,
-              'listen_port': (awg.port | int) + p_idx,
-              'ip': _base ~ '.' ~ ip_octet
+              'subnet': selected_awg_subnet,
+              'listen_port': (awg.port | int) + p_idx
             }) -%}
             {%- endfor -%}
           {%- endfor -%}
         {%- endif -%}
       {%- endfor -%} {{ result }}
+
+- name: Assign AmneziaWG client IPs
+  ansible.builtin.command:
+    argv:
+      - node
+      - '{{ playbook_dir }}/../scripts/assign_vpn_addresses.mjs'
+      - client-ips
+    stdin: "{{ {'profiles': awg_client_profiles} | to_json }}"
+    chdir: '{{ playbook_dir }}/..'
+  register: awg_client_ips_raw
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  when: (awg_client_profiles | default([]) | length) > 0
+
+- name: Expose AmneziaWG profiles with client IPs
+  ansible.builtin.set_fact:
+    awg_client_profiles: '{{ (awg_client_ips_raw.stdout | from_json).profiles }}'
+  when: (awg_client_profiles | default([]) | length) > 0
 
 
 - name: Check if AmneziaWG profile private keys exist
@@ -158,15 +173,12 @@
 - name: Build WireGuard client profile matrix
   ansible.builtin.set_fact:
     wg_client_profiles: >-
-      {%- set result = [] -%} {%- set _base = wg.subnet.split('/')[0].rsplit('.', 1)[0] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for i in range((wg_clients_normalized | default([])) | length) -%}
-        {%- set client = (wg_clients_normalized | default([]))[i] -%}
+      {%- set result = [] -%} {%- set _peer_count = (stable_peers | default([]) | length) -%} {%- for client in wg_clients_normalized | default([]) -%}
         {%- if _peer_count > 0 -%}
           {%- for p_idx in range(_peer_count) -%}
             {%- set selected_peer = stable_peers[p_idx] -%}
             {%- for mode in ['split', 'full'] -%}
             {%- set profile_name = client.name ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
-            {%- set mode_offset = 0 if mode == 'split' else _peer_count -%}
-            {%- set ip_octet = 100 + i * (_peer_count * 2) + mode_offset + p_idx -%}
             {%- set _ = result.append({
               'name': client.name,
               'apply_rules': (mode == 'split'),
@@ -174,8 +186,8 @@
               'selected_peer': selected_peer,
               'profile_name': profile_name,
               'key_id': profile_name,
-              'listen_port': (wg.port | default(51821) | int) + p_idx,
-              'ip': _base ~ '.' ~ ip_octet
+              'subnet': wg.subnet,
+              'listen_port': (wg.port | default(51821) | int) + p_idx
             }) -%}
             {%- endfor -%}
           {%- endfor -%}
@@ -183,6 +195,29 @@
       {%- endfor -%} {{ result }}
 
   when: wg.subnet is defined
+
+- name: Assign WireGuard client IPs
+  ansible.builtin.command:
+    argv:
+      - node
+      - '{{ playbook_dir }}/../scripts/assign_vpn_addresses.mjs'
+      - client-ips
+    stdin: "{{ {'profiles': wg_client_profiles} | to_json }}"
+    chdir: '{{ playbook_dir }}/..'
+  register: wg_client_ips_raw
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  when:
+    - wg.subnet is defined
+    - (wg_client_profiles | default([]) | length) > 0
+
+- name: Expose WireGuard profiles with client IPs
+  ansible.builtin.set_fact:
+    wg_client_profiles: '{{ (wg_client_ips_raw.stdout | from_json).profiles }}'
+  when:
+    - wg.subnet is defined
+    - (wg_client_profiles | default([]) | length) > 0
 
 - name: Check if WireGuard profile private keys exist
   ansible.builtin.stat:
@@ -247,6 +282,36 @@
   delegate_to: localhost
   become: false
   when: wg.subnet is defined
+
+- name: Assert VPN client IPs are unique per subnet
+  ansible.builtin.assert:
+    that:
+      - vpn_client_ip_duplicates | length == 0
+    fail_msg: "Duplicate VPN client IPs: {{ vpn_client_ip_duplicates | join(', ') }}"
+  vars:
+    vpn_client_ip_duplicates: >-
+      {%- set seen = {} -%}
+      {%- set dupes = [] -%}
+      {%- for h in groups['all'] -%}
+        {%- for p in hostvars[h]['awg_client_profiles'] | default([]) -%}
+          {%- set key = (p.subnet | default(p.awg_subnet)) ~ '|' ~ p.ip -%}
+          {%- if key in seen -%}
+            {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ h ~ '/' ~ p.profile_name ~ ')') -%}
+          {%- else -%}
+            {%- set _ = seen.update({key: h ~ '/' ~ p.profile_name}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {%- for p in hostvars[h]['wg_client_profiles'] | default([]) -%}
+          {%- set key = (p.subnet | default(hostvars[h]['wg']['subnet'])) ~ '|' ~ p.ip -%}
+          {%- if key in seen -%}
+            {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ h ~ '/wg/' ~ p.profile_name ~ ')') -%}
+          {%- else -%}
+            {%- set _ = seen.update({key: h ~ '/wg/' ~ p.profile_name}) -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ dupes }}
+  run_once: true
 
 - name: Build enriched VLESS client profile list
   ansible.builtin.set_fact:

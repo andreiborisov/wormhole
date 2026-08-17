@@ -1,0 +1,53 @@
+---
+- name: Build VPN subnet overrides from inventory
+  ansible.builtin.set_fact:
+    vpn_subnet_overrides: >-
+      {%- set result = {} -%}
+      {%- for h in groups['all'] -%}
+        {%- set ov = {} -%}
+        {%- if hostvars[h].awg is defined and hostvars[h].awg.subnet is defined -%}
+          {%- set _ = ov.update({'awg': hostvars[h].awg.subnet}) -%}
+        {%- endif -%}
+        {%- if hostvars[h].wg is defined and hostvars[h].wg.subnet is defined -%}
+          {%- set _ = ov.update({'wg': hostvars[h].wg.subnet}) -%}
+        {%- endif -%}
+        {%- if ov | length > 0 -%}
+          {%- set _ = result.update({h: ov}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+- name: Build VPN subnet assignment payload
+  ansible.builtin.set_fact:
+    vpn_subnet_payload: "{{ {'inventory': inventory_dir | basename, 'pool': vpn_subnet_pool, 'prefix': vpn_subnet_prefix | int, 'reserved': vpn_reserved_cidrs | default([]), 'hosts': groups['all'], 'kinds': ['awg', 'wg'], 'overrides': vpn_subnet_overrides} }}"
+
+- name: Compute VPN subnets
+  ansible.builtin.command:
+    argv:
+      - node
+      - '{{ playbook_dir }}/../scripts/assign_vpn_addresses.mjs'
+      - subnets
+    stdin: '{{ vpn_subnet_payload | to_json }}'
+    chdir: '{{ playbook_dir }}/..'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: vpn_subnets_raw
+
+- name: Expose computed VPN subnets
+  ansible.builtin.set_fact:
+    vpn_subnets: '{{ vpn_subnets_raw.stdout | from_json }}'
+
+- name: Merge assigned AmneziaWG subnet
+  ansible.builtin.set_fact:
+    awg: '{{ awg | combine({"subnet": vpn_subnets[inventory_hostname].awg}) }}'
+
+- name: Merge assigned WireGuard subnet
+  ansible.builtin.set_fact:
+    wg: '{{ wg | combine({"subnet": vpn_subnets[inventory_hostname].wg}) }}'
+
+- name: Show assigned VPN subnets
+  ansible.builtin.debug:
+    var: vpn_subnets
+  run_once: true

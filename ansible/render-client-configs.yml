@@ -7,6 +7,11 @@
 - name: Render AWG and WireGuard client configs
   hosts: all
   tasks:
+    - name: Assign deterministic VPN subnets
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: assign-vpn-subnets.yml
+
     - name: Prepare AWG server keys and facts
       ansible.builtin.include_role:
         name: wormhole

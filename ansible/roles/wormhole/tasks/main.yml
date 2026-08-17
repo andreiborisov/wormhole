@@ -1,4 +1,15 @@
 ---
+# ── VPN addressing (deterministic subnets) ────────────────────────────────────
+
+- name: Assign deterministic VPN subnets
+  ansible.builtin.include_tasks:
+    file: assign-vpn-subnets.yml
+    apply:
+      tags:
+        - always
+  tags:
+    - always
+
 # ── Kernel modules ────────────────────────────────────────────────────────────
 
 - name: Install linux-modules-extra

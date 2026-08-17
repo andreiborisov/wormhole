@@ -99,6 +99,19 @@ node scripts/check_site.mjs https://brew.sh/
 node scripts/check_site.mjs --profile non-ru --json https://ozon.ru/
 ```
 
+### VPN subnets
+
+AmneziaWG and WireGuard `/24`s are computed from the inventory directory name plus each host name (`development|ru-1|awg`, …). Client tunnel IPs are derived from the profile name, not the order of `clients:`. Set reserved LAN ranges in inventory so allocated subnets never overlap them:
+
+```yaml
+all:
+  vars:
+    vpn_reserved_cidrs:
+      - 10.0.0.0/16
+```
+
+If a host still has `awg.subnet` / `wg.subnet`, those values are kept (production can stay pinned until you delete the keys).
+
 ### Adding a node
 
 Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `rules.profile`, then re-run:
@@ -130,6 +143,7 @@ rules/
 
 scripts/
   compose_rules.mjs             # profile → domain sets + CIDR union; --write-ruleset for sing-box
+  assign_vpn_addresses.mjs      # deterministic AWG/WG subnets and client IPs
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
@@ -146,6 +160,7 @@ ansible/
   local/<name>/                 # Generated keys and client configs
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
+    tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG ranges
     tasks/compose-rules.yml     # Localhost Node compose for this host
     templates/sing-box/         # Jinja2 config template
 ```
