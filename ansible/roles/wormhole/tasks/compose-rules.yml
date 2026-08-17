@@ -7,9 +7,23 @@
       - rules.profile | length > 0
     fail_msg: Set rules.profile to ru or non-ru on this host
 
+- name: Set local compiled rule-set paths
+  ansible.builtin.set_fact:
+    wormhole_ruleset_dir: '{{ local_dir }}/sing-box/{{ inventory_hostname }}'
+    wormhole_ruleset_json: '{{ local_dir }}/sing-box/{{ inventory_hostname }}/profile.json'
+    wormhole_ruleset_srs: '{{ local_dir }}/sing-box/{{ inventory_hostname }}/profile.srs'
+
+- name: Create local rule-set directory
+  ansible.builtin.file:
+    path: '{{ wormhole_ruleset_dir }}'
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+
 - name: Build compose argv
   ansible.builtin.set_fact:
-    wormhole_compose_argv: "{{ ['node', playbook_dir ~ '/../scripts/compose_rules.mjs', '--profile', rules.profile] }}"
+    wormhole_compose_argv: "{{ ['node', playbook_dir ~ '/../scripts/compose_rules.mjs', '--profile', rules.profile, '--write-ruleset', wormhole_ruleset_json] }}"
 
 - name: Add extra include set names
   ansible.builtin.set_fact:
@@ -33,3 +47,23 @@
 - name: Expose composed rule sets
   ansible.builtin.set_fact:
     wormhole_composed: '{{ wormhole_rules_raw.stdout | from_json }}'
+
+- name: Compile profile rule-set
+  ansible.builtin.command:
+    argv:
+      - sing-box
+      - rule-set
+      - compile
+      - '{{ wormhole_ruleset_json }}'
+      - -o
+      - '{{ wormhole_ruleset_srs }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Deploy compiled rule-set
+  ansible.builtin.copy:
+    src: '{{ wormhole_ruleset_srs }}'
+    dest: '{{ deploy_dir }}/sing-box/rule-set.srs'
+    mode: '0644'
+  notify: Restart sing-box

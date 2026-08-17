@@ -4,7 +4,7 @@
 
 {# --- DNS/rule sources and advertised prefixes --- #}
 {%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
-{%- set _domain_set_names = wormhole_composed.domain_sets | default([]) | map(attribute='name') | list -%}
+{%- set _has_profile_ruleset = (wormhole_composed.domain_suffixes | default([])) | length > 0 -%}
 {%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
 {%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
@@ -31,14 +31,14 @@
         "query_type": ["HTTPS"],
         "action": "reject",
         "reject_code": 3
-      }{% if _domain_set_names %},
+      }{% if _has_profile_ruleset %},
       {
-        "rule_set": {{ _domain_set_names | to_json }},
+        "rule_set": ["profile"],
         "query_type": ["A", "AAAA"],
         "server": "fakeip"
       },
       {
-        "rule_set": {{ _domain_set_names | to_json }},
+        "rule_set": ["profile"],
         "server": "upstream-local"
       }{% endif %}{% if peer_custom_rules %},
       {
@@ -217,15 +217,12 @@
   "route": {
     "auto_detect_interface": true,
     "rule_set": [
-{% for domain_set in wormhole_composed.domain_sets | default([]) %}
       {
-        "tag": "{{ domain_set.name }}",
-        "type": "remote",
-        "format": "source",
-        "url": "{{ rule_set.base_url }}/{{ domain_set.url_suffix }}",
-        "update_interval": "5m"
-      }{% if not loop.last %},{% endif %}
-{% endfor %}
+        "tag": "profile",
+        "type": "local",
+        "format": "binary",
+        "path": "/etc/sing-box/rule-set.srs"
+      }
     ],
     "default_domain_resolver": {
       "server": "upstream-local"

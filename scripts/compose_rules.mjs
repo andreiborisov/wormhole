@@ -7,8 +7,9 @@
  *
  *   node scripts/compose_rules.mjs --profile ru
  *   node scripts/compose_rules.mjs --profile ru --include ru --exclude international/social
+ *   node scripts/compose_rules.mjs --profile ru --write-ruleset /tmp/profile.json
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -168,13 +169,27 @@ export function composeRules({
   }
 }
 
+export function profileRuleSet(composed) {
+  const suffixes = composed.domain_suffixes || []
+  return {
+    version: 4,
+    rules: suffixes.length ? [{ domain_suffix: suffixes }] : [],
+  }
+}
+
 function parseArgs(argv) {
-  const opts = { profile: null, include: [], exclude: [] }
+  const opts = { profile: null, include: [], exclude: [], writeRuleset: null }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--profile' || arg.startsWith('--profile=')) {
       opts.profile = arg.includes('=')
         ? arg.slice('--profile='.length)
+        : argv[++i]
+      continue
+    }
+    if (arg === '--write-ruleset' || arg.startsWith('--write-ruleset=')) {
+      opts.writeRuleset = arg.includes('=')
+        ? arg.slice('--write-ruleset='.length)
         : argv[++i]
       continue
     }
@@ -212,7 +227,7 @@ if (isCli()) {
     const opts = parseArgs(process.argv.slice(2))
     if (opts.help || !opts.profile) {
       process.stdout.write(
-        'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path]\n',
+        'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path] [--write-ruleset path]\n',
       )
       process.exit(opts.help ? 0 : 1)
     }
@@ -221,6 +236,12 @@ if (isCli()) {
       include: opts.include,
       exclude: opts.exclude,
     })
+    if (opts.writeRuleset) {
+      writeFileSync(
+        opts.writeRuleset,
+        `${JSON.stringify(profileRuleSet(composed), null, 2)}\n`,
+      )
+    }
     process.stdout.write(`${JSON.stringify(composed)}\n`)
   } catch (err) {
     console.error(`error: ${err.message}`)

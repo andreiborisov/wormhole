@@ -21,6 +21,7 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 - Node.js on the Ansible controller (used to compose rule sets at deploy time)
+- [sing-box](https://sing-box.sagernet.org) on the Ansible controller (compiles the profile rule-set)
 - At least two fresh VPS instances with root access (one `ru`, one `non-ru`)
 
 #### For automatic setup
@@ -41,7 +42,7 @@ Each deployment is a directory under `ansible/inventories/` (gitignored). Copy t
 cp -R ansible/inventories.example ansible/inventories/production
 ```
 
-Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, GitHub raw URL for rules, and each host's `rules.profile` (`ru` or `non-ru`).
+Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and each host's `rules.profile` (`ru` or `non-ru`).
 
 ### 3. Fill in secrets
 
@@ -78,7 +79,7 @@ rules:
 
 Missing `rules.profile` fails the playbook.
 
-**Domains** are sing-box remote rule-sets (`update_interval: 5m`) and only affect FakeIP DNS. Edit a file under `rules/domain/ru/` or `rules/domain/international/`, commit, and push — nodes pick the change up on the next refresh.
+**Domains** are a sing-box rule-set compiled on the Ansible controller and copied onto the node (`type: local`). They only affect FakeIP DNS. Edit a file under `rules/domain/ru/` or `rules/domain/international/`, then re-run the playbook.
 
 **CIDRs** are composed at deploy time into Tailscale `advertise_routes` and WireGuard / AmneziaWG `AllowedIPs`. Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
 
@@ -128,7 +129,7 @@ rules/
       social/
 
 scripts/
-  compose_rules.mjs             # profile → domain sets + CIDR union
+  compose_rules.mjs             # profile → domain sets + CIDR union; --write-ruleset for sing-box
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json

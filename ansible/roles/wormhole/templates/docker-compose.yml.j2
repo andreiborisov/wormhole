@@ -64,6 +64,7 @@ services:
       - run
     volumes:
       - ./sing-box/config.json:/etc/sing-box/config.json:ro
+      - ./sing-box/rule-set.srs:/etc/sing-box/rule-set.srs:ro
       - ./sing-box/data:/var/lib/sing-box
       - ./sing-box/tls:/etc/sing-box/tls:ro
     restart: unless-stopped
