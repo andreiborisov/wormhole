@@ -79,6 +79,8 @@ rutor.is
 rutracker.cc
 rutracker.org
 zoom.us
+retn.net
+retn.net.prod.hosts.ooklaserver.net
 1.178.172.0/23
 1.179.14.0/23
 1.179.60.0/23

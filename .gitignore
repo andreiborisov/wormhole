@@ -1,7 +1,9 @@
 # Local inventory — contains hosts, IPs, URLs, and per-host vars; never commit
 ansible/inventories/
 
-# Generates files
+# Node
+node_modules/
+.pnpm-store/
 ansible/local/
 
 # Local client tools (miniooni, etc.) under tools/bin/

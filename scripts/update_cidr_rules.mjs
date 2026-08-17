@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Fetch upstream CIDR lists, merge overlapping ranges, and write sing-box
- * source JSON under rules/cidr/. Then refresh profile .txt files.
+ * source JSON under rules/cidr/. Path .txt files are local-only
+ * (`node scripts/extract_rules_to_txt.mjs`).
  *
  *   node scripts/update_cidr_rules.mjs
  */
@@ -10,7 +11,6 @@ import { isIP } from 'node:net'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { defaultRulesDir } from './compose_rules.mjs'
-import { profileTxt } from './extract_rules_to_txt.mjs'
 
 const userAgent = 'wormhole-cidr-update'
 const sourcesPath = join(defaultRulesDir, 'cidr', 'sources.json')
@@ -488,12 +488,6 @@ export async function updateCidrRules({
     process.stdout.write(
       `${entry.path}: ${before} → ${merged.length} prefixes\n`,
     )
-  }
-
-  for (const profile of ['ru', 'non-ru']) {
-    const { path, count, text } = profileTxt(profile, rulesDir)
-    writeFileSync(path, text)
-    process.stdout.write(`Wrote ${count} entries to profiles/${profile}.txt\n`)
   }
 
   return summaries
