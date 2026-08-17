@@ -1,40 +1,15 @@
 ---
-- name: Normalize VLESS clients
-  ansible.builtin.set_fact:
-    vless_clients_normalized: >-
-      {%- set result = [] -%}
-      {%- for client in clients | default([]) -%}
-        {%- if client is mapping -%}
-          {%- set client_name = client.name -%}
-          {%- set client_uuid = client.uuid | default('') -%}
-        {%- else -%}
-          {%- set client_name = client -%}
-          {%- set client_uuid = '' -%}
-        {%- endif -%}
-        {%- if client_name not in (result | map(attribute='name') | list) -%}
-          {%- set _ = result.append({
-            'name': client_name,
-            'uuid': client_uuid,
-            'client_id': client_name
-          }) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ result }}
-
-- name: Create local VLESS directories
+- name: Create local VLESS key directory
   ansible.builtin.file:
-    path: '{{ item }}'
+    path: '{{ keys_dir }}/vless/{{ inventory_hostname }}'
     state: directory
     mode: '0700'
-  loop:
-    - '{{ local_dir }}/vless/keys/{{ inventory_hostname }}'
-    - '{{ local_dir }}/vless/configs/{{ inventory_hostname }}'
   delegate_to: localhost
   become: false
 
 - name: Check if local Reality private key exists
   ansible.builtin.stat:
-    path: '{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_private.key'
+    path: '{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_private.key'
   register: _reality_private_key_stat
   delegate_to: localhost
   become: false
@@ -42,9 +17,9 @@
 - name: Generate local Reality keypair and short ID
   ansible.builtin.shell: |
     set -eu
-    priv_key_path="{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_private.key"
-    pub_key_path="{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_public.key"
-    short_id_path="{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_short_id"
+    priv_key_path="{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_private.key"
+    pub_key_path="{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_public.key"
+    short_id_path="{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_short_id"
 
     keypair="$(sing-box generate reality-keypair)"
     priv_b64="$(printf '%s\n' "$keypair" | awk -F': ' '/^PrivateKey:/ {print $2}')"
@@ -55,9 +30,9 @@
     printf '%s\n' "$priv_b64" > "$priv_key_path"
     printf '%s\n' "$pub_b64" > "$pub_key_path"
     printf '%s\n' "$short_id" > "$short_id_path"
-    chmod 0600 "{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_private.key"
-    chmod 0600 "{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_public.key"
-    chmod 0600 "{{ local_dir }}/vless/keys/{{ inventory_hostname }}/reality_short_id"
+    chmod 0600 "{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_private.key"
+    chmod 0600 "{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_public.key"
+    chmod 0600 "{{ keys_dir }}/vless/{{ inventory_hostname }}/reality_short_id"
   when: not _reality_private_key_stat.stat.exists
   no_log: true
   environment:
@@ -70,17 +45,17 @@
     vless: >-
       {{
         vless | combine({
-          'private_key': (lookup('file', local_dir ~ '/vless/keys/' ~ inventory_hostname ~ '/reality_private.key') | trim),
-          'public_key': (lookup('file', local_dir ~ '/vless/keys/' ~ inventory_hostname ~ '/reality_public.key') | trim),
-          'short_id': (lookup('file', local_dir ~ '/vless/keys/' ~ inventory_hostname ~ '/reality_short_id') | trim)
+          'private_key': (lookup('file', keys_dir ~ '/vless/' ~ inventory_hostname ~ '/reality_private.key') | trim),
+          'public_key': (lookup('file', keys_dir ~ '/vless/' ~ inventory_hostname ~ '/reality_public.key') | trim),
+          'short_id': (lookup('file', keys_dir ~ '/vless/' ~ inventory_hostname ~ '/reality_short_id') | trim)
         }, recursive=True)
       }}
   no_log: true
 
 - name: Check if VLESS client UUID files exist
   ansible.builtin.stat:
-    path: '{{ local_dir }}/vless/keys/{{ inventory_hostname }}/{{ item.client_id }}.uuid'
-  loop: '{{ vless_clients_normalized }}'
+    path: '{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.client_id }}.uuid'
+  loop: '{{ vpn_clients }}'
   register: _vless_client_uuid_stats
   delegate_to: localhost
   become: false
@@ -90,9 +65,9 @@
     python3 - <<'PY'
     import pathlib
     import uuid
-    pathlib.Path("{{ local_dir }}/vless/keys/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid").write_text(str(uuid.uuid4()) + "\n")
+    pathlib.Path("{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid").write_text(str(uuid.uuid4()) + "\n")
     PY
-    chmod 0600 "{{ local_dir }}/vless/keys/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid"
+    chmod 0600 "{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.item.client_id }}.uuid"
   loop: '{{ _vless_client_uuid_stats.results | default([]) }}'
   when:
     - item.item.uuid | length == 0
@@ -113,8 +88,8 @@
     client_with_uuid: >-
       {{
         item | combine({
-          'uuid': (item.uuid if item.uuid | length > 0 else (lookup('file', local_dir ~ '/vless/keys/' ~ inventory_hostname ~ '/' ~ item.client_id ~ '.uuid') | trim))
+          'uuid': (item.uuid if item.uuid | length > 0 else (lookup('file', keys_dir ~ '/vless/' ~ inventory_hostname ~ '/' ~ item.client_id ~ '.uuid') | trim))
         })
       }}
-  loop: '{{ vless_clients_normalized }}'
+  loop: '{{ vpn_clients }}'
   no_log: true

@@ -12,6 +12,11 @@
         name: wormhole
         tasks_from: assign-vpn-subnets.yml
 
+    - name: Expand users × devices
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: expand-vpn-users.yml
+
     - name: Prepare AWG server keys and facts
       ansible.builtin.include_role:
         name: wormhole
@@ -28,7 +33,7 @@
         name: wormhole
         tasks_from: vless-reality-keys.yml
       when:
-        - (clients | default([]) | length) > 0
+        - (vpn_clients | default([]) | length) > 0
 
     - name: Render client configs locally
       ansible.builtin.include_role:
@@ -39,3 +44,15 @@
       ansible.builtin.include_role:
         name: wormhole
         tasks_from: sync-awg-server-config.yml
+
+- name: Pack encrypted per-user config zips
+  hosts: all
+  gather_facts: false
+  tags:
+    - client-configs
+  tasks:
+    - name: Pack user config zips
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: pack-user-zips.yml
+      run_once: true

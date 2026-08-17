@@ -10,3 +10,15 @@
   hosts: all
   roles:
     - wormhole
+
+- name: Pack encrypted per-user config zips
+  hosts: all
+  gather_facts: false
+  tags:
+    - client-configs
+  tasks:
+    - name: Pack user config zips
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: pack-user-zips.yml
+      run_once: true

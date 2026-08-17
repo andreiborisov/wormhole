@@ -1,5 +1,6 @@
 brew "act"
 brew "ansible"
 brew "fish"
+brew "sevenzip"
 brew "sing-box"
 brew "wireguard-tools"

@@ -1,4 +1,4 @@
 vless://{{ peer.uuid }}@{{ ansible_host }}:{{ vless.port }}?encryption=none&security=reality&sni={{ vless.domain |
 urlencode }}&fp={{ vless.client_fingerprint | urlencode }}&pbk={{ vless.public_key | urlencode }}&sid={{ vless.short_id
-| urlencode }}&type=grpc&serviceName={{ vless.grpc_service_name | urlencode }}&mode=gun#{{ (inventory_hostname ~ '-' ~
-(peer.profile_name | default(peer.name))) | urlencode }}
+| urlencode }}&type=grpc&serviceName={{ vless.grpc_service_name | urlencode }}&mode=gun#{{ (peer.user ~ '/' ~ peer.device
+~ '/' ~ (peer.config_stem | default(peer.profile_name | default(peer.name)))) | urlencode }}

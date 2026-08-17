@@ -7,7 +7,8 @@
  *   node scripts/assign_vpn_addresses.mjs --self-check
  *
  * Subnet seed: "{inventory}|{hostname}|{kind}"
- * Client IP seed: profile_name (occupancy resolved in sorted-name order per subnet)
+ * Client IP seed: "{user}|{device}|{entry}|{exit}|{mode}" (occupancy resolved in
+ * sorted-seed order per subnet; duplicate seeds in a subnet fail)
  */
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
@@ -175,24 +176,36 @@ export function assignSubnets(input) {
   return result
 }
 
+export function clientIpSeed(profile, index = 0) {
+  if (!profile || typeof profile !== 'object') {
+    throw new Error(`profile ${index} must be an object`)
+  }
+  const fields = ['user', 'device', 'entry', 'exit', 'mode']
+  for (const field of fields) {
+    const value = profile[field]
+    if (typeof value !== 'string' || !value) {
+      throw new Error(`profile ${index} missing ${field}`)
+    }
+    if (value.includes('|')) {
+      throw new Error(`profile ${index} ${field} must not contain "|"`)
+    }
+  }
+  return `${profile.user}|${profile.device}|${profile.entry}|${profile.exit}|${profile.mode}`
+}
+
 export function assignClientIps(input) {
   const profiles = input?.profiles
   if (!Array.isArray(profiles)) throw new Error('profiles is required')
 
   const groups = new Map()
   profiles.forEach((profile, index) => {
-    if (!profile || typeof profile !== 'object') {
-      throw new Error(`profile ${index} must be an object`)
-    }
-    if (!profile.profile_name) {
-      throw new Error(`profile ${index} missing profile_name`)
-    }
+    const seed = clientIpSeed(profile, index)
     const subnet = profile.subnet
     if (!subnet) {
-      throw new Error(`profile ${profile.profile_name} missing subnet`)
+      throw new Error(`profile ${seed} missing subnet`)
     }
     if (!groups.has(subnet)) groups.set(subnet, [])
-    groups.get(subnet).push({ index, profile })
+    groups.get(subnet).push({ index, profile, seed })
   })
 
   const ips = new Array(profiles.length)
@@ -201,14 +214,20 @@ export function assignClientIps(input) {
     const net = parseCidr(subnet)
     const usable = usableHostIds(net.size)
     const taken = new Set()
+    const seenSeeds = new Set()
     const sorted = [...items].sort((a, b) => {
-      if (a.profile.profile_name < b.profile.profile_name) return -1
-      if (a.profile.profile_name > b.profile.profile_name) return 1
+      if (a.seed < b.seed) return -1
+      if (a.seed > b.seed) return 1
       return 0
     })
 
-    for (const { index, profile } of sorted) {
-      const start = Number(digest(profile.profile_name) % BigInt(usable.length))
+    for (const { index, seed } of sorted) {
+      if (seenSeeds.has(seed)) {
+        throw new Error(`duplicate client identity in ${net.cidr}: ${seed}`)
+      }
+      seenSeeds.add(seed)
+
+      const start = Number(digest(seed) % BigInt(usable.length))
       let hostId = null
       for (let j = 0; j < usable.length; j++) {
         const candidate = usable[(start + j) % usable.length]
@@ -219,9 +238,7 @@ export function assignClientIps(input) {
         }
       }
       if (hostId === null) {
-        throw new Error(
-          `subnet ${net.cidr} exhausted while assigning ${profile.profile_name}`,
-        )
+        throw new Error(`subnet ${net.cidr} exhausted while assigning ${seed}`)
       }
       ips[index] = formatIpv4(net.network + hostId)
     }
@@ -291,21 +308,30 @@ export function selfCheck() {
   assert(reservedOverrideFailed, 'override inside reserved range must fail')
 
   const subnet = first['ru-1'].awg
+  const clientProfile = (overrides) => ({
+    user: 'andrei',
+    device: 'iphone',
+    entry: 'ru-1',
+    exit: 'sw-1',
+    mode: 'split',
+    subnet,
+    ...overrides,
+  })
   const profiles = [
-    { profile_name: 'b-host-peer-split', subnet },
-    { profile_name: 'a-host-peer-full', subnet },
-    { profile_name: 'a-host-peer-split', subnet },
+    clientProfile({ device: 'macbook', mode: 'full' }),
+    clientProfile({ device: 'iphone', mode: 'full' }),
+    clientProfile({ device: 'iphone', mode: 'split' }),
   ]
   const assigned = assignClientIps({ profiles })
   const reordered = assignClientIps({ profiles: [...profiles].reverse() })
-  const byName = (rows) =>
+  const bySeed = (rows) =>
     Object.fromEntries(
       [...rows.profiles]
-        .sort((a, b) => a.profile_name.localeCompare(b.profile_name))
-        .map((p) => [p.profile_name, p.ip]),
+        .sort((a, b) => clientIpSeed(a).localeCompare(clientIpSeed(b)))
+        .map((p) => [clientIpSeed(p), p.ip]),
     )
   assert(
-    JSON.stringify(byName(assigned)) === JSON.stringify(byName(reordered)),
+    JSON.stringify(bySeed(assigned)) === JSON.stringify(bySeed(reordered)),
     'client IPs must not depend on input order',
   )
 
@@ -314,11 +340,32 @@ export function selfCheck() {
     const last = Number(profile.ip.split('.')[3])
     assert(
       last !== 0 && last !== 1 && last !== 53 && last !== 255,
-      `reserved host id assigned to ${profile.profile_name}`,
+      `reserved host id assigned to ${clientIpSeed(profile)}`,
     )
     assert(!ips.has(profile.ip), `duplicate client IP ${profile.ip}`)
     ips.add(profile.ip)
   }
+
+  const twoDevices = assignClientIps({
+    profiles: [
+      clientProfile({ device: 'iphone' }),
+      clientProfile({ device: 'macbook' }),
+    ],
+  })
+  assert(
+    twoDevices.profiles[0].ip !== twoDevices.profiles[1].ip,
+    'different devices must get different IPs',
+  )
+
+  let duplicateIdentityFailed = false
+  try {
+    assignClientIps({
+      profiles: [clientProfile({}), clientProfile({})],
+    })
+  } catch (err) {
+    duplicateIdentityFailed = /duplicate client identity/.test(err.message)
+  }
+  assert(duplicateIdentityFailed, 'duplicate identity in a subnet must fail')
 }
 
 async function readStdin() {

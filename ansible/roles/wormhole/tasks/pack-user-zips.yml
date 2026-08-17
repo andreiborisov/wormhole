@@ -1,0 +1,50 @@
+---
+- name: Assert zip_passwords cover every user
+  ansible.builtin.assert:
+    that:
+      - zip_passwords is defined
+      - zip_passwords is mapping
+      - item in zip_passwords
+      - zip_passwords[item] | length > 0
+    fail_msg: >-
+      zip_passwords.{{ item }} is missing. Add a per-user AES zip password in vault.
+  loop: '{{ user_devices.keys() | list }}'
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Write pack payload
+  ansible.builtin.copy:
+    content: "{{ {'local_dir': configs_dir, 'users': user_devices.keys() | list, 'passwords': zip_passwords} | to_json }}\n"
+    dest: '{{ local_dir }}/.pack-payload.json'
+    mode: '0600'
+  run_once: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Pack encrypted per-user config zips
+  block:
+    - name: Run pack_user_configs
+      ansible.builtin.command:
+        argv:
+          - node
+          - '{{ playbook_dir }}/../scripts/pack_user_configs.mjs'
+          - '{{ local_dir }}/.pack-payload.json'
+        chdir: '{{ playbook_dir }}/..'
+      register: pack_user_configs_raw
+      changed_when: true
+      environment:
+        PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+
+    - name: Show packed zip paths
+      ansible.builtin.debug:
+        msg: '{{ (pack_user_configs_raw.stdout | from_json).packed }}'
+  always:
+    - name: Remove pack payload
+      ansible.builtin.file:
+        path: '{{ local_dir }}/.pack-payload.json'
+        state: absent
+  run_once: true
+  delegate_to: localhost
+  become: false

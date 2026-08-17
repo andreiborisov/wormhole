@@ -58,7 +58,7 @@ I5   = {{ awg.i5 }}
 {% for peer in (awg_clients_with_keys | default([]) | selectattr('selected_peer', 'equalto', selected_peer)) %}
 
 [Peer]
-# {{ peer.name }}
+# {{ peer.user }}/{{ peer.device }}
 PublicKey  = {{ peer.public_key }}
 AllowedIPs = {{ peer.ip }}/32
 {% endfor %}

@@ -1,6 +1,9 @@
 ---
 deploy_dir: /root/wormhole
 local_dir: '{{ playbook_dir }}/local/{{ inventory_dir | basename }}'
+configs_dir: '{{ local_dir }}/configs'
+keys_dir: '{{ local_dir }}/keys'
+rulesets_dir: '{{ local_dir }}/rulesets'
 tcp_congestion_control: 'bbr'
 vpn_subnet_pool: '10.0.0.0/8'
 vpn_subnet_prefix: 24

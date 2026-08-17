@@ -1,7 +1,7 @@
 ---
 - name: Create local WireGuard key directory
   ansible.builtin.file:
-    path: '{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}'
+    path: '{{ keys_dir }}/wireguard/{{ inventory_hostname }}'
     state: directory
     mode: '0700'
   delegate_to: localhost
@@ -9,7 +9,7 @@
 
 - name: Check if local WireGuard server private key exists
   ansible.builtin.stat:
-    path: '{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/server.key'
+    path: '{{ keys_dir }}/wireguard/{{ inventory_hostname }}/server.key'
   register: _local_wg_server_key_stat
   delegate_to: localhost
   become: false
@@ -17,7 +17,7 @@
 - name: Generate local WireGuard server private key
   ansible.builtin.shell: |
     set -eu
-    key_path="{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/server.key"
+    key_path="{{ keys_dir }}/wireguard/{{ inventory_hostname }}/server.key"
     wg genkey > "$key_path"
     chmod 0600 "$key_path"
   when: not _local_wg_server_key_stat.stat.exists
@@ -29,12 +29,12 @@
 
 - name: Set wg_private_key fact
   ansible.builtin.set_fact:
-    wg_private_key: "{{ lookup('file', local_dir ~ '/wireguard/keys/' ~ inventory_hostname ~ '/server.key') | trim }}"
+    wg_private_key: "{{ lookup('file', keys_dir ~ '/wireguard/' ~ inventory_hostname ~ '/server.key') | trim }}"
   no_log: true
 
 - name: Derive WireGuard public key locally
   ansible.builtin.shell: |
-    key_path="{{ local_dir }}/wireguard/keys/{{ inventory_hostname }}/server.key"
+    key_path="{{ keys_dir }}/wireguard/{{ inventory_hostname }}/server.key"
     wg pubkey < "$key_path"
   register: _wg_pubkey
   changed_when: false

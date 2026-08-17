@@ -1,0 +1,37 @@
+all:
+  vars:
+    ansible_ssh_private_key_file: ~/.ssh/ansible
+    vpn_reserved_cidrs:
+      - 10.0.0.0/16
+  hosts:
+    ru-1:
+      ansible_host: 203.0.113.10
+      ansible_user: root
+      rules:
+        profile: ru
+      dns:
+        local_server: '127.0.0.53'
+      peers:
+        - 'de-1'
+      users:
+        - example
+      tailscale:
+        hostname: 'wormhole-ru-1'
+      vless:
+        domain: 'www.cloudflare.com'
+    de-1:
+      ansible_host: 203.0.113.20
+      ansible_user: root
+      rules:
+        profile: non-ru
+      dns:
+        local_server: '127.0.0.53'
+        local_domains:
+          - 'retn.net'
+          - 'retn.net.prod.hosts.ooklaserver.net'
+      peers:
+        - 'ru-1'
+      users:
+        - example
+      tailscale:
+        hostname: 'wormhole-de-1'

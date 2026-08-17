@@ -20,7 +20,8 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 ### Requirements
 
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
-- Node.js on the Ansible controller (used to compose rule sets at deploy time)
+- Node.js on the Ansible controller (used to compose rule sets and pack client zips)
+- [7-Zip](https://www.7-zip.org) (`7zz`) on the Ansible controller (AES-256 client zips)
 - [sing-box](https://sing-box.sagernet.org) on the Ansible controller (compiles the profile rule-set)
 - At least two fresh VPS instances with root access (one `ru`, one `non-ru`)
 
@@ -42,11 +43,11 @@ Each deployment is a directory under `ansible/inventories/` (gitignored). Copy t
 cp -R ansible/inventories.example ansible/inventories/production
 ```
 
-Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, and each host's `rules.profile` (`ru` or `non-ru`).
+Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, each host's `rules.profile` (`ru` or `non-ru`), and the per-host `users:` allow list. Map people to devices in `group_vars/all/user_devices.yml`.
 
 ### 3. Fill in secrets
 
-Edit `ansible/inventories/production/group_vars/all/vault.yml` with a real Tailscale auth key and a strong Hysteria2 password:
+Edit `ansible/inventories/production/group_vars/all/vault.yml` with a real Tailscale auth key, a strong Hysteria2 password, and per-user `zip_passwords` (AES-256 zip for that person's config folder):
 
 ```fish
 # Generate a password:
@@ -55,6 +56,8 @@ openssl rand -base64 32
 # Get a Tailscale auth key:
 # https://login.tailscale.com/admin/settings/keys
 ```
+
+`zip_passwords` is a map of user name → zip password, one entry per key in `user_devices`.
 
 ### 4. Run setup
 
@@ -101,7 +104,7 @@ node scripts/check_site.mjs --profile non-ru --json https://ozon.ru/
 
 ### VPN subnets
 
-AmneziaWG and WireGuard `/24`s are computed from the inventory directory name plus each host name (`development|ru-1|awg`, …). Client tunnel IPs are derived from the profile name, not the order of `clients:`. Set reserved LAN ranges in inventory so allocated subnets never overlap them:
+AmneziaWG and WireGuard `/24`s are computed from the inventory directory name plus each host name (`development|ru-1|awg`, …). Client tunnel IPs are hashed from `user|device|entry|exit|mode`, not from the short config filename. Set reserved LAN ranges in inventory so allocated subnets never overlap them:
 
 ```yaml
 all:
@@ -112,9 +115,21 @@ all:
 
 If a host still has `awg.subnet` / `wg.subnet`, those values are kept (production can stay pinned until you delete the keys).
 
+People and devices live in `group_vars/all/user_devices.yml`. Each host lists who may connect with `users:`. After render, configs are `configs/{user}/{device}/{protocol}/wormhole-{entry}-{exit}-{mode}.conf` and each person gets one AES-256 `configs/{user}.zip` (password from `zip_passwords` in vault).
+
+```yaml
+# group_vars/all/user_devices.yml
+user_devices:
+  andrei:
+    devices: [slate, macbook, ipad, iphone]
+
+# hosts.local.yml (per host)
+users: [andrei, karina]
+```
+
 ### Adding a node
 
-Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, and `rules.profile`, then re-run:
+Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, `users:` allow list, and `rules.profile`, then re-run:
 
 ```fish
 cd ansible
@@ -144,6 +159,7 @@ rules/
 scripts/
   compose_rules.mjs             # profile → domain sets + CIDR union; --write-ruleset for sing-box
   assign_vpn_addresses.mjs      # deterministic AWG/WG subnets and client IPs
+  pack_user_configs.mjs         # AES-256 zip per user config tree
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
@@ -154,13 +170,18 @@ ansible/
   inventories.example/          # Template — copy to inventories/<name>
     hosts.local.yml
     group_vars/all/
+      user_devices.yml          # Name → devices map
       vars.yml                  # Per-deployment config
       vault.yml                 # Secrets (encrypted after setup)
   inventories/<name>/           # Live inventories (gitignored)
-  local/<name>/                 # Generated keys and client configs
+  local/<name>/                 # Generated artifacts
+    configs/{user}/{device}/    # Client configs and per-user AES-256 zips
+    keys/                       # Server and client private keys
+    rulesets/{host}/            # Compiled profile rule-sets
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
     tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG ranges
+    tasks/expand-vpn-users.yml  # user_devices × users → vpn_clients
     tasks/compose-rules.yml     # Localhost Node compose for this host
     templates/sing-box/         # Jinja2 config template
 ```

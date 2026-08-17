@@ -1,0 +1,48 @@
+---
+- name: Assert user_devices registry and per-host users list
+  ansible.builtin.assert:
+    that:
+      - user_devices is defined
+      - user_devices is mapping
+      - user_devices | length > 0
+      - users is defined
+      - users is iterable
+      - users is not string
+      - users | length > 0
+    fail_msg: >-
+      Inventory must define user_devices (name → {devices: [...]}) in group_vars
+      and a non-empty users: list on each host.
+
+- name: Assert allowed users exist in user_devices
+  ansible.builtin.assert:
+    that:
+      - item in user_devices
+      - user_devices[item] is mapping
+      - user_devices[item].devices is defined
+      - user_devices[item].devices is iterable
+      - user_devices[item].devices is not string
+      - user_devices[item].devices | length > 0
+    fail_msg: >-
+      Host {{ inventory_hostname }} lists user '{{ item }}' but user_devices.{{ item }}
+      is missing or has no devices list.
+  loop: '{{ users }}'
+
+- name: Expand users × devices into vpn_clients
+  ansible.builtin.set_fact:
+    vpn_clients: >-
+      {%- set result = [] -%}
+      {%- for user_name in users -%}
+        {%- for device in user_devices[user_name].devices -%}
+          {%- set client_id = user_name ~ '-' ~ device -%}
+          {%- if client_id not in (result | map(attribute='client_id') | list) -%}
+            {%- set _ = result.append({
+              'user': user_name,
+              'device': device,
+              'name': client_id,
+              'client_id': client_id,
+              'uuid': ''
+            }) -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ result }}

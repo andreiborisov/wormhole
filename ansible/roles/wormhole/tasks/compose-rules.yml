@@ -9,9 +9,9 @@
 
 - name: Set local compiled rule-set paths
   ansible.builtin.set_fact:
-    wormhole_ruleset_dir: '{{ local_dir }}/sing-box/{{ inventory_hostname }}'
-    wormhole_ruleset_json: '{{ local_dir }}/sing-box/{{ inventory_hostname }}/profile.json'
-    wormhole_ruleset_srs: '{{ local_dir }}/sing-box/{{ inventory_hostname }}/profile.srs'
+    wormhole_ruleset_dir: '{{ rulesets_dir }}/{{ inventory_hostname }}'
+    wormhole_ruleset_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.json'
+    wormhole_ruleset_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.srs'
 
 - name: Create local rule-set directory
   ansible.builtin.file:
