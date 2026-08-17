@@ -42,6 +42,7 @@ eurogamer.net
 meduza.io
 zona.media
 amnezia.org
+rublacklist.net
 torproject.org
 umbrel.com
 amazon.com
