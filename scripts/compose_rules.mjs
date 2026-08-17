@@ -41,6 +41,7 @@ function walkKind(absDir, kind) {
         continue
       }
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+      if (entry.name === 'sources.json') continue
       const key = childRel.slice(0, -'.json'.length)
       if (map[key]) {
         throw new Error(`duplicate ${kind} set: ${key}`)

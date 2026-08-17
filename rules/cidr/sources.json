@@ -1,0 +1,59 @@
+{
+  "sets": [
+    {
+      "path": "international/infrastructure/cloudflare",
+      "source": "json-paths",
+      "url": "https://api.cloudflare.com/client/v4/ips",
+      "paths": ["result.ipv4_cidrs", "result.ipv6_cidrs"]
+    },
+    {
+      "path": "international/infrastructure/cloudfront",
+      "source": "aws-ip-ranges",
+      "url": "https://ip-ranges.amazonaws.com/ip-ranges.json",
+      "service": "CLOUDFRONT"
+    },
+    {
+      "path": "international/infrastructure/aws",
+      "source": "aws-ip-ranges",
+      "url": "https://ip-ranges.amazonaws.com/ip-ranges.json",
+      "service": "GLOBALACCELERATOR"
+    },
+    {
+      "path": "international/infrastructure/fastly",
+      "source": "json-paths",
+      "url": "https://api.fastly.com/public-ip-list",
+      "paths": ["addresses", "ipv6_addresses"]
+    },
+    {
+      "path": "international/infrastructure/github-pages",
+      "source": "json-paths",
+      "url": "https://api.github.com/meta",
+      "paths": ["pages"]
+    },
+    {
+      "path": "international/infrastructure/shopping",
+      "source": "arin-org",
+      "url": "https://whois.arin.net/rest/org/SHOPI-1/nets"
+    },
+    {
+      "path": "international/infrastructure/vercel",
+      "source": "arin-org",
+      "url": "https://whois.arin.net/rest/org/ZEITI/nets"
+    },
+    {
+      "path": "international/infrastructure/vultr",
+      "source": "vultr-geofeed",
+      "url": "https://geofeed.constant.com/?json"
+    },
+    {
+      "path": "international/social/telegram",
+      "source": "cidr-text",
+      "url": "https://core.telegram.org/resources/cidr.txt"
+    },
+    {
+      "path": "international/social/discord",
+      "source": "ripe-org",
+      "url": "https://rest.db.ripe.net/search.json?inverse-attribute=org&type-filter=inetnum&type-filter=inet6num&query-string=ORG-DI90-RIPE"
+    }
+  ]
+}

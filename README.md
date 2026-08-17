@@ -82,9 +82,13 @@ Missing `rules.profile` fails the playbook.
 
 **CIDRs** are composed at deploy time into Tailscale `advertise_routes` and WireGuard / AmneziaWG `AllowedIPs`. Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
 
+Upstream CIDR lists are defined in `rules/cidr/sources.json`. Refresh the compressed JSON (and profile `.txt` files) locally, or via the daily GitHub Action. These endpoints are public; do not commit `.env` or secrets. The Node script is the source of truth; `act` checks the workflow wrapper. `--bind` keeps generated JSON on the host. Apple Silicon may need `--container-architecture linux/arm64`. Fetch needs network (`act`'s default Docker network is enough).
+
 ```fish
 node scripts/compose_rules.mjs --profile ru
 node scripts/extract_rules_to_txt.mjs   # writes rules/profiles/ru.txt and non-ru.txt
+node scripts/update_cidr_rules.mjs
+act workflow_dispatch -W .github/workflows/update-cidr-rules.yml --bind
 ```
 
 From a client (not a mesh node), probe a site against a profile:
@@ -119,6 +123,7 @@ rules/
     international/              # international (ru profile)
       social/
   cidr/
+    sources.json                # upstream fetch map for CIDR JSON
     international/              # same tree as domain/; CIDR-only sets live here too
       social/
 
@@ -126,6 +131,7 @@ scripts/
   compose_rules.mjs             # profile → domain sets + CIDR union
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
+  update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
 
 ansible/
   site.yml                      # Full provisioning playbook
