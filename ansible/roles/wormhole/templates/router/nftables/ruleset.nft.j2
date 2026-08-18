@@ -17,15 +17,17 @@ table ip wormhole {
     type filter hook forward priority filter; policy accept;
     ct state invalid drop
     ct state established,related accept
-    # Allow non-TPROXY'd VPN traffic (ICMP, etc.) to be forwarded
+    # Client-to-client on the AWG iface; internet is diverted into sb-awg-in
     iifname "awg-in" accept
   }
 
   # NAT
+  # Never SNAT into sb-awg-in: that rewrote client IPs to 172.19.10.1 and
+  # source_ip_cidr could not pick the Hysteria2 exit (everything looked local).
+  # Never SNAT AWG→WAN either: that was the silent leak onto this node's IP.
 
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
-    # Masquerade non-TPROXY'd VPN traffic leaving via another interface
-    iifname "awg-in" oifname != "awg-in" masquerade
+    oifname "sb-awg-in" return
   }
 }

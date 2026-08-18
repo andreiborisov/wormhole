@@ -19,3 +19,12 @@
         {%- set _ = result.update({p: ([awg_net, wg_net] | select('string') | unique | list)}) -%}
       {%- endfor -%}
       {{ result }}
+
+- name: Require a VPN source CIDR per exit
+  ansible.builtin.assert:
+    that:
+      - (peer_source_cidrs[item] | default([])) | length > 0
+    fail_msg: >-
+      No AWG/WG subnet on {{ item }} for source-IP routing from {{ inventory_hostname }}.
+      VPN subnets must be assigned before peer facts.
+  loop: '{{ stable_peers }}'

@@ -38,7 +38,7 @@
     "independent_cache": true,
     "rules": [
       {
-        "query_type": ["HTTPS"],
+        "query_type": ["HTTPS", "AAAA"],
         "action": "reject",
         "reject_code": 3
       }{% if _has_profile_ruleset %},
@@ -77,7 +77,8 @@
       {
         "type": "udp",
         "tag": "upstream-local",
-        "server": "{{ dns.local_server }}"
+        "server": "{{ dns.local_server }}",
+        "detour": "direct-lo"
       },
       {
         "type": "fakeip",
@@ -194,6 +195,11 @@
       "tag": "direct",
       "type": "direct"
     },
+    {
+      "tag": "direct-lo",
+      "type": "direct",
+      "bind_interface": "lo"
+    },
 {% for peer in deterministic_peers %}
     {
       "tag": "peer-{{ peer }}",
@@ -227,9 +233,16 @@
         "inbound": ["tunnel-in"],
         "port": [53],
         "action": "route",
-        "outbound": "direct"
+        "outbound": "direct-lo"
       },
       {
+        "ip_cidr": ["127.0.0.0/8"],
+        "port": [53],
+        "action": "route",
+        "outbound": "direct-lo"
+      },
+      {
+        "inbound": {{ _vpn_inbounds | to_json }},
         "port": [53],
         "action": "hijack-dns"
       }{% for peer in deterministic_peers %}
