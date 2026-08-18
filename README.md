@@ -47,7 +47,7 @@ Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IP
 
 ### 3. Fill in secrets
 
-Edit `ansible/inventories/production/group_vars/all/vault.yml` with a real Tailscale auth key, a strong Hysteria2 password, and per-user `zip_passwords` (AES-256 zip for that person's config folder):
+Edit `ansible/inventories/production/group_vars/all/vault.yml` with a real Tailscale auth key, a strong Hysteria2 password, and per-user `vault_zip_passwords` (AES-256 zip for that person's config folder):
 
 ```fish
 # Generate a password:
@@ -57,7 +57,7 @@ openssl rand -base64 32
 # https://login.tailscale.com/admin/settings/keys
 ```
 
-`zip_passwords` is a map of user name → zip password, one entry per key in `user_devices`.
+`vault_zip_passwords` is a map of user name → zip password, one entry per key in `user_devices`.
 
 ### 4. Run setup
 
@@ -115,7 +115,7 @@ all:
 
 If a host still has `awg.subnet` / `wg.subnet`, those values are kept (production can stay pinned until you delete the keys).
 
-People and devices live in `group_vars/all/user_devices.yml`. Each host lists who may connect with `users:`. After render, configs are `configs/{user}/{device}/{protocol}/wormhole-{entry}-{exit}-{mode}.conf` and each person gets one AES-256 `configs/{user}.zip` (password from `zip_passwords` in vault).
+People and devices live in `group_vars/all/user_devices.yml`. Each host lists who may connect with `users:`. After render, configs are `configs/{user}/{device}/{protocol}/wormhole-{entry}-{exit}-{mode}.conf` and each person gets one AES-256 `configs/{user}.zip` (password from `vault_zip_passwords` in vault).
 
 ```yaml
 # group_vars/all/user_devices.yml

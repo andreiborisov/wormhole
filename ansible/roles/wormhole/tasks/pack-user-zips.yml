@@ -1,13 +1,14 @@
 ---
-- name: Assert zip_passwords cover every user
+- name: Assert vault_zip_passwords cover every user
   ansible.builtin.assert:
     that:
-      - zip_passwords is defined
-      - zip_passwords is mapping
-      - item in zip_passwords
-      - zip_passwords[item] | length > 0
+      - vault_zip_passwords is defined
+      - vault_zip_passwords is mapping
+      - item in vault_zip_passwords
+      - vault_zip_passwords[item] | length > 0
     fail_msg: >-
-      zip_passwords.{{ item }} is missing. Add a per-user AES zip password in vault.
+      vault_zip_passwords.{{ item }} is missing. Add a per-user AES zip password in vault.
+
   loop: '{{ user_devices.keys() | list }}'
   run_once: true
   delegate_to: localhost
@@ -15,7 +16,8 @@
 
 - name: Write pack payload
   ansible.builtin.copy:
-    content: "{{ {'local_dir': configs_dir, 'users': user_devices.keys() | list, 'passwords': zip_passwords} | to_json }}\n"
+    content:
+      "{{ {'local_dir': configs_dir, 'users': user_devices.keys() | list, 'passwords': vault_zip_passwords} | to_json }}\n"
     dest: '{{ local_dir }}/.pack-payload.json'
     mode: '0600'
   run_once: true

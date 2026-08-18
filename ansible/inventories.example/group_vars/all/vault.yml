@@ -3,5 +3,5 @@
 #   cd ansible && ansible-vault encrypt inventories/<name>/group_vars/all/vault.yml
 tailscale_auth_key: 'tskey-auth-CHANGEME'
 hysteria2_password: 'CHANGEME'
-zip_passwords:
+vault_zip_passwords:
   example: 'CHANGEME'
