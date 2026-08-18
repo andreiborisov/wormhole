@@ -5,8 +5,9 @@
  *   node scripts/pack_user_configs.mjs payload.json
  *   node scripts/pack_user_configs.mjs --self-check
  *
- * payload: { local_dir, users: ["andrei"], passwords: { andrei: "..." } }
+ * payload: { local_dir, users: ["andrei", "karina"], passwords: { andrei: "..." } }
  * local_dir is the configs/ tree (user folders live directly under it).
+ * Users without a config directory are skipped and their leftover zip is removed.
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -44,17 +45,20 @@ export function packUserConfigs({ localDir, users, passwords }) {
 
   const sevenZip = findSevenZip()
   const packed = []
+  const skipped = []
 
   for (const user of users) {
+    const userDir = join(localDir, user)
+    const zipPath = join(localDir, `${user}.zip`)
+    if (!existsSync(userDir)) {
+      rmSync(zipPath, { force: true })
+      skipped.push(user)
+      continue
+    }
     const password = passwords[user]
     if (typeof password !== 'string' || !password) {
       throw new Error(`missing zip password for user ${user}`)
     }
-    const userDir = join(localDir, user)
-    if (!existsSync(userDir)) {
-      throw new Error(`missing user config directory: ${userDir}`)
-    }
-    const zipPath = join(localDir, `${user}.zip`)
     rmSync(zipPath, { force: true })
     const result = spawnSync(
       sevenZip,
@@ -70,7 +74,11 @@ export function packUserConfigs({ localDir, users, passwords }) {
     packed.push(zipPath)
   }
 
-  return packed
+  if (packed.length === 0) {
+    throw new Error('no user config directories to pack')
+  }
+
+  return { packed, skipped }
 }
 
 function assert(condition, message) {
@@ -90,14 +98,18 @@ export function selfCheck() {
     mkdirSync(userDir, { recursive: true })
     writeFileSync(join(userDir, 'wormhole-ru-1-de-1-split.conf'), sample)
 
+    writeFileSync(join(localDir, 'karina.zip'), 'stale')
+
     const packed = packUserConfigs({
       localDir,
-      users: ['andrei'],
+      users: ['andrei', 'karina'],
       passwords: { andrei: password },
     })
-    assert(packed.length === 1, 'packed one zip')
-    const zipPath = packed[0]
+    assert(packed.packed.length === 1, 'packed one zip')
+    assert(packed.skipped.length === 1 && packed.skipped[0] === 'karina', 'skip missing user dir')
+    const zipPath = packed.packed[0]
     assert(existsSync(zipPath), 'zip exists')
+    assert(!existsSync(join(localDir, 'karina.zip')), 'stale zip for missing user is removed')
 
     const listing = spawnSync(sevenZip, ['l', '-slt', zipPath], {
       encoding: 'utf8',
@@ -124,6 +136,18 @@ export function selfCheck() {
       { encoding: 'utf8' },
     )
     assert(wrong.status !== 0, 'extract with wrong password must fail')
+
+    let emptyFailed = false
+    try {
+      packUserConfigs({
+        localDir,
+        users: ['karina'],
+        passwords: { karina: password },
+      })
+    } catch (err) {
+      emptyFailed = /no user config directories to pack/.test(err.message)
+    }
+    assert(emptyFailed, 'packing only missing users must fail')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -167,7 +191,7 @@ if (isCli()) {
       users: input.users,
       passwords: input.passwords,
     })
-    process.stdout.write(`${JSON.stringify({ packed })}\n`)
+    process.stdout.write(`${JSON.stringify(packed)}\n`)
   } catch (err) {
     console.error(`error: ${err.message}`)
     process.exit(1)

@@ -1,5 +1,18 @@
 ---
-- name: Assert vault_zip_passwords cover every user
+- name: Collect users published on any host
+  ansible.builtin.set_fact:
+    published_vpn_users: >-
+      {{
+        groups['all']
+        | map('extract', hostvars, 'users')
+        | select('defined')
+        | flatten
+        | unique
+        | list
+      }}
+  run_once: true
+
+- name: Assert vault_zip_passwords cover every registry user
   ansible.builtin.assert:
     that:
       - vault_zip_passwords is defined
@@ -14,10 +27,29 @@
   delegate_to: localhost
   become: false
 
+- name: Assert at least one host published a user
+  ansible.builtin.assert:
+    that:
+      - published_vpn_users | length > 0
+    fail_msg: No host users list produced anyone to pack.
+
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Remove zip archives for unpublished users
+  ansible.builtin.file:
+    path: '{{ configs_dir }}/{{ item }}.zip'
+    state: absent
+  loop: '{{ user_devices.keys() | difference(published_vpn_users) | list }}'
+  run_once: true
+  delegate_to: localhost
+  become: false
+
 - name: Write pack payload
   ansible.builtin.copy:
     content:
-      "{{ {'local_dir': configs_dir, 'users': user_devices.keys() | list, 'passwords': vault_zip_passwords} | to_json }}\n"
+      "{{ {'local_dir': configs_dir, 'users': published_vpn_users, 'passwords': vault_zip_passwords} | to_json }}\n"
     dest: '{{ local_dir }}/.pack-payload.json'
     mode: '0600'
   run_once: true
@@ -41,7 +73,7 @@
 
     - name: Show packed zip paths
       ansible.builtin.debug:
-        msg: '{{ (pack_user_configs_raw.stdout | from_json).packed }}'
+        msg: '{{ pack_user_configs_raw.stdout | from_json }}'
   always:
     - name: Remove pack payload
       ansible.builtin.file:
