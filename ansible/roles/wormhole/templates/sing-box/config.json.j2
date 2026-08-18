@@ -95,7 +95,13 @@
     }{% if not loop.last or _has_wg_endpoints %},{% endif %}
 {% endfor %}
 {% if _has_wg_endpoints %}{% for peer in deterministic_peers %}
-{%- set peer_clients = _wg_clients | selectattr('selected_peer', 'equalto', peer) | list -%}
+{%- set peer_clients_map = {} -%}
+{%- for client in _wg_clients | selectattr('selected_peer', 'equalto', peer) -%}
+{%- if client.key_id not in peer_clients_map -%}
+{%- set _ = peer_clients_map.update({client.key_id: client}) -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set peer_clients = peer_clients_map | dict2items | map(attribute='value') | list -%}
     {
       "type": "wireguard",
       "tag": "wg-ep-{{ peer }}",

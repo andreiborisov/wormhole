@@ -55,7 +55,13 @@ I4   = {{ awg.i4 }}
 {% if awg.i5 is defined %}
 I5   = {{ awg.i5 }}
 {% endif %}
-{% for peer in (awg_clients_with_keys | default([]) | selectattr('selected_peer', 'equalto', selected_peer)) %}
+{%- set unique_peers = {} -%}
+{%- for peer in (awg_clients_with_keys | default([]) | selectattr('selected_peer', 'equalto', selected_peer)) -%}
+{%- if peer.key_id not in unique_peers -%}
+{%- set _ = unique_peers.update({peer.key_id: peer}) -%}
+{%- endif -%}
+{%- endfor -%}
+{% for peer in unique_peers | dict2items | map(attribute='value') | list %}
 
 [Peer]
 # {{ peer.user }}/{{ peer.device }}

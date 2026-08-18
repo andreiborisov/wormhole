@@ -7,8 +7,8 @@
  *   node scripts/assign_vpn_addresses.mjs --self-check
  *
  * Subnet seed: "{inventory}|{hostname}|{kind}"
- * Client IP seed: "{user}|{device}|{entry}|{exit}|{mode}" (occupancy resolved in
- * sorted-seed order per subnet; duplicate seeds in a subnet fail)
+ * Client IP seed: "{user}|{device}" (occupancy resolved in sorted-seed order
+ * per subnet; split/full and extra paths reuse the same IP)
  */
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
@@ -180,7 +180,7 @@ export function clientIpSeed(profile, index = 0) {
   if (!profile || typeof profile !== 'object') {
     throw new Error(`profile ${index} must be an object`)
   }
-  const fields = ['user', 'device', 'entry', 'exit', 'mode']
+  const fields = ['user', 'device']
   for (const field of fields) {
     const value = profile[field]
     if (typeof value !== 'string' || !value) {
@@ -190,7 +190,7 @@ export function clientIpSeed(profile, index = 0) {
       throw new Error(`profile ${index} ${field} must not contain "|"`)
     }
   }
-  return `${profile.user}|${profile.device}|${profile.entry}|${profile.exit}|${profile.mode}`
+  return `${profile.user}|${profile.device}`
 }
 
 export function assignClientIps(input) {
@@ -214,18 +214,18 @@ export function assignClientIps(input) {
     const net = parseCidr(subnet)
     const usable = usableHostIds(net.size)
     const taken = new Set()
-    const seenSeeds = new Set()
+    const ipBySeed = new Map()
     const sorted = [...items].sort((a, b) => {
       if (a.seed < b.seed) return -1
       if (a.seed > b.seed) return 1
-      return 0
+      return a.index - b.index
     })
 
     for (const { index, seed } of sorted) {
-      if (seenSeeds.has(seed)) {
-        throw new Error(`duplicate client identity in ${net.cidr}: ${seed}`)
+      if (ipBySeed.has(seed)) {
+        ips[index] = ipBySeed.get(seed)
+        continue
       }
-      seenSeeds.add(seed)
 
       const start = Number(digest(seed) % BigInt(usable.length))
       let hostId = null
@@ -240,7 +240,9 @@ export function assignClientIps(input) {
       if (hostId === null) {
         throw new Error(`subnet ${net.cidr} exhausted while assigning ${seed}`)
       }
-      ips[index] = formatIpv4(net.network + hostId)
+      const ip = formatIpv4(net.network + hostId)
+      ipBySeed.set(seed, ip)
+      ips[index] = ip
     }
   }
 
@@ -335,37 +337,33 @@ export function selfCheck() {
     'client IPs must not depend on input order',
   )
 
-  const ips = new Set()
-  for (const profile of assigned.profiles) {
-    const last = Number(profile.ip.split('.')[3])
+  const iphone = assigned.profiles.filter((p) => p.device === 'iphone')
+  const macbook = assigned.profiles.filter((p) => p.device === 'macbook')
+  assert(iphone.length === 2, 'expected split and full iphone profiles')
+  assert(iphone[0].ip === iphone[1].ip, 'split and full must share one IP per device')
+  assert(macbook.length === 1, 'expected one macbook profile')
+  assert(macbook[0].ip !== iphone[0].ip, 'different devices must get different IPs')
+
+  const uniqueIps = new Set(assigned.profiles.map((p) => p.ip))
+  assert(uniqueIps.size === 2, 'modes must not consume extra host addresses')
+  for (const ip of uniqueIps) {
+    const last = Number(ip.split('.')[3])
     assert(
       last !== 0 && last !== 1 && last !== 53 && last !== 255,
-      `reserved host id assigned to ${clientIpSeed(profile)}`,
+      `reserved host id assigned to ${ip}`,
     )
-    assert(!ips.has(profile.ip), `duplicate client IP ${profile.ip}`)
-    ips.add(profile.ip)
   }
 
-  const twoDevices = assignClientIps({
+  const sameDeviceAcrossPaths = assignClientIps({
     profiles: [
-      clientProfile({ device: 'iphone' }),
-      clientProfile({ device: 'macbook' }),
+      clientProfile({ entry: 'ru-1', exit: 'sw-1', mode: 'split' }),
+      clientProfile({ entry: 'de-1', exit: 'sw-1', mode: 'full' }),
     ],
   })
   assert(
-    twoDevices.profiles[0].ip !== twoDevices.profiles[1].ip,
-    'different devices must get different IPs',
+    sameDeviceAcrossPaths.profiles[0].ip === sameDeviceAcrossPaths.profiles[1].ip,
+    'a device keeps one IP in a subnet across entry/exit/mode',
   )
-
-  let duplicateIdentityFailed = false
-  try {
-    assignClientIps({
-      profiles: [clientProfile({}), clientProfile({})],
-    })
-  } catch (err) {
-    duplicateIdentityFailed = /duplicate client identity/.test(err.message)
-  }
-  assert(duplicateIdentityFailed, 'duplicate identity in a subnet must fail')
 }
 
 async function readStdin() {

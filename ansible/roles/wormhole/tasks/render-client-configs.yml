@@ -44,7 +44,8 @@
             {%- set selected_peer = stable_peers[p_idx] -%}
             {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
             {%- for mode in ['split', 'full'] -%}
-            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+            {%- set profile_name = key_id ~ '-' ~ mode -%}
             {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
             {%- set _ = result.append({
               'name': client.name,
@@ -57,7 +58,7 @@
               'selected_peer': selected_peer,
               'config_stem': config_stem,
               'key_id': key_id,
-              'profile_name': key_id,
+              'profile_name': profile_name,
               'awg_subnet': selected_awg_subnet,
               'subnet': selected_awg_subnet,
               'listen_port': (awg.port | int) + p_idx
@@ -87,10 +88,21 @@
     awg_client_profiles: '{{ (awg_client_ips_raw.stdout | from_json).profiles }}'
   when: (awg_client_profiles | default([]) | length) > 0
 
+- name: Deduplicate AmneziaWG key identities
+  ansible.builtin.set_fact:
+    awg_key_profiles: >-
+      {%- set seen = {} -%}
+      {%- for p in awg_client_profiles | default([]) -%}
+        {%- if p.key_id not in seen -%}
+          {%- set _ = seen.update({p.key_id: p}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ seen | dict2items | map(attribute='value') | list }}
+
 - name: Check if AmneziaWG profile private keys exist
   ansible.builtin.stat:
     path: '{{ keys_dir }}/amneziawg/{{ inventory_hostname }}/{{ item.key_id }}.key'
-  loop: '{{ awg_client_profiles | default([]) }}'
+  loop: '{{ awg_key_profiles | default([]) }}'
   register: _peer_key_stats
   delegate_to: localhost
   become: false
@@ -113,7 +125,7 @@
   ansible.builtin.shell: |
     key_path="{{ keys_dir }}/amneziawg/{{ inventory_hostname }}/{{ item.key_id }}.key"
     wg pubkey < "$key_path"
-  loop: '{{ awg_client_profiles | default([]) }}'
+  loop: '{{ awg_key_profiles | default([]) }}'
   register: _peer_pubkeys
   changed_when: false
   environment:
@@ -124,11 +136,13 @@
 - name: Build enriched AmneziaWG profile list with public keys
   ansible.builtin.set_fact:
     awg_clients_with_keys: >-
+      {%- set pub = {} -%}
+      {%- for item in _peer_pubkeys.results | default([]) -%}
+        {%- set _ = pub.update({item.item.key_id: item.stdout}) -%}
+      {%- endfor -%}
       {%- set result = [] -%}
-      {%- for i in range((awg_client_profiles | default([])) | length) -%}
-        {%- set profile = (awg_client_profiles | default([]))[i] -%}
-        {%- set pubkey = _peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append(profile | combine({'public_key': pubkey})) -%}
+      {%- for profile in awg_client_profiles | default([]) -%}
+        {%- set _ = result.append(profile | combine({'public_key': pub[profile.key_id]})) -%}
       {%- endfor -%}
       {{ result }}
 
@@ -175,7 +189,8 @@
           {%- for p_idx in range(_peer_count) -%}
             {%- set selected_peer = stable_peers[p_idx] -%}
             {%- for mode in ['split', 'full'] -%}
-            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+            {%- set profile_name = key_id ~ '-' ~ mode -%}
             {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
             {%- set _ = result.append({
               'name': client.name,
@@ -188,7 +203,7 @@
               'selected_peer': selected_peer,
               'config_stem': config_stem,
               'key_id': key_id,
-              'profile_name': key_id,
+              'profile_name': profile_name,
               'subnet': wg.subnet,
               'listen_port': (wg.port | default(51821) | int) + p_idx
             }) -%}
@@ -222,10 +237,22 @@
     - wg.subnet is defined
     - (wg_client_profiles | default([]) | length) > 0
 
+- name: Deduplicate WireGuard key identities
+  ansible.builtin.set_fact:
+    wg_key_profiles: >-
+      {%- set seen = {} -%}
+      {%- for p in wg_client_profiles | default([]) -%}
+        {%- if p.key_id not in seen -%}
+          {%- set _ = seen.update({p.key_id: p}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ seen | dict2items | map(attribute='value') | list }}
+  when: wg.subnet is defined
+
 - name: Check if WireGuard profile private keys exist
   ansible.builtin.stat:
     path: '{{ keys_dir }}/wireguard/{{ inventory_hostname }}/{{ item.key_id }}.key'
-  loop: '{{ wg_client_profiles | default([]) }}'
+  loop: '{{ wg_key_profiles | default([]) }}'
   register: _wg_peer_key_stats
   delegate_to: localhost
   become: false
@@ -251,7 +278,7 @@
   ansible.builtin.shell: |
     key_path="{{ keys_dir }}/wireguard/{{ inventory_hostname }}/{{ item.key_id }}.key"
     wg pubkey < "$key_path"
-  loop: '{{ wg_client_profiles | default([]) }}'
+  loop: '{{ wg_key_profiles | default([]) }}'
   register: _wg_peer_pubkeys
   changed_when: false
   environment:
@@ -263,11 +290,13 @@
 - name: Build enriched WireGuard peer list with public keys
   ansible.builtin.set_fact:
     wireguard_clients_with_keys: >-
+      {%- set pub = {} -%}
+      {%- for item in _wg_peer_pubkeys.results | default([]) -%}
+        {%- set _ = pub.update({item.item.key_id: item.stdout}) -%}
+      {%- endfor -%}
       {%- set result = [] -%}
-      {%- for i in range((wg_client_profiles | default([])) | length) -%}
-        {%- set profile = (wg_client_profiles | default([]))[i] -%}
-        {%- set pubkey = _wg_peer_pubkeys.results[i].stdout -%}
-        {%- set _ = result.append(profile | combine({'public_key': pubkey})) -%}
+      {%- for profile in wg_client_profiles | default([]) -%}
+        {%- set _ = result.append(profile | combine({'public_key': pub[profile.key_id]})) -%}
       {%- endfor -%}
       {{ result }}
   when: wg.subnet is defined
@@ -287,7 +316,7 @@
   become: false
   when: wg.subnet is defined
 
-- name: Assert VPN client IPs are unique per subnet
+- name: Assert VPN client IPs are unique per device in each subnet
   ansible.builtin.assert:
     that:
       - vpn_client_ip_duplicates | length == 0
@@ -299,18 +328,24 @@
       {%- for h in groups['all'] -%}
         {%- for p in hostvars[h]['awg_client_profiles'] | default([]) -%}
           {%- set key = (p.subnet | default(p.awg_subnet)) ~ '|' ~ p.ip -%}
+          {%- set ident = p.user ~ '/' ~ p.device -%}
           {%- if key in seen -%}
-            {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ h ~ '/' ~ p.profile_name ~ ')') -%}
+            {%- if seen[key] != ident -%}
+              {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ ident ~ ')') -%}
+            {%- endif -%}
           {%- else -%}
-            {%- set _ = seen.update({key: h ~ '/' ~ p.profile_name}) -%}
+            {%- set _ = seen.update({key: ident}) -%}
           {%- endif -%}
         {%- endfor -%}
         {%- for p in hostvars[h]['wg_client_profiles'] | default([]) -%}
           {%- set key = (p.subnet | default(hostvars[h]['wg']['subnet'])) ~ '|' ~ p.ip -%}
+          {%- set ident = p.user ~ '/' ~ p.device -%}
           {%- if key in seen -%}
-            {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ h ~ '/wg/' ~ p.profile_name ~ ')') -%}
+            {%- if seen[key] != ident -%}
+              {%- set _ = dupes.append(key ~ ' (' ~ seen[key] ~ ' vs ' ~ ident ~ ')') -%}
+            {%- endif -%}
           {%- else -%}
-            {%- set _ = seen.update({key: h ~ '/wg/' ~ p.profile_name}) -%}
+            {%- set _ = seen.update({key: ident}) -%}
           {%- endif -%}
         {%- endfor -%}
       {%- endfor -%}
