@@ -1,0 +1,21 @@
+---
+- name: Build deterministic peer list
+  ansible.builtin.set_fact:
+    stable_peers: '{{ (peers | default([]) | unique | sort) }}'
+
+- name: Assert this node has peers
+  ansible.builtin.assert:
+    that:
+      - stable_peers | length > 0
+    fail_msg: Host {{ inventory_hostname }} needs a non-empty peers list.
+
+- name: Map exit VPN CIDRs for source-IP routing
+  ansible.builtin.set_fact:
+    peer_source_cidrs: >-
+      {%- set result = {} -%}
+      {%- for p in stable_peers -%}
+        {%- set awg_net = hostvars[p]['awg']['subnet'] | default(none) -%}
+        {%- set wg_net = hostvars[p]['wg']['subnet'] | default(none) -%}
+        {%- set _ = result.update({p: ([awg_net, wg_net] | select('string') | unique | list)}) -%}
+      {%- endfor -%}
+      {{ result }}

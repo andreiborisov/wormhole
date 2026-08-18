@@ -16,8 +16,6 @@ all:
         - 'de-1'
       users:
         - example
-      tailscale:
-        hostname: 'wormhole-ru-1'
       vless:
         domain: 'www.cloudflare.com'
     de-1:
@@ -34,5 +32,3 @@ all:
         - 'ru-1'
       users:
         - example
-      tailscale:
-        hostname: 'wormhole-de-1'

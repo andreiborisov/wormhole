@@ -1,17 +1,20 @@
 ---
-- name: Build deterministic peer list for AWG interfaces
-  ansible.builtin.set_fact:
-    stable_peers: '{{ (peers | default([]) | unique | sort) }}'
+- name: Find leftover per-peer AWG interface configs
+  ansible.builtin.find:
+    paths: '{{ deploy_dir }}/amneziawg'
+    patterns: 'awg-in-*.conf'
+  register: _stale_awg_confs
 
-- name: Deploy AWG interface configs per peer
+- name: Remove leftover per-peer AWG interface configs
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: absent
+  loop: '{{ _stale_awg_confs.files | default([]) }}'
+  notify: Restart amneziawg
+
+- name: Deploy shared AWG interface config
   ansible.builtin.template:
     src: amneziawg/awg-in.conf.j2
-    dest: '{{ deploy_dir }}/amneziawg/awg-in-{{ stable_peers[item] }}.conf'
+    dest: '{{ deploy_dir }}/amneziawg/awg-in.conf'
     mode: '0600'
-  loop: '{{ range((stable_peers | default([]) | length)) | list }}'
-  loop_control:
-    label: '{{ stable_peers[item] }}'
-  vars:
-    p_idx: '{{ item }}'
-    selected_peer: '{{ stable_peers[item] }}'
   notify: Restart amneziawg

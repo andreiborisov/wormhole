@@ -51,3 +51,46 @@
   ansible.builtin.debug:
     var: vpn_subnets
   run_once: true
+
+- name: Require rules.profile on every inventory host
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].rules is defined
+      - hostvars[item].rules.profile is defined
+      - hostvars[item].rules.profile | length > 0
+    fail_msg: Set rules.profile on {{ item }} (from hosts.local.yml, not rules/profiles)
+  loop: "{{ groups['all'] }}"
+  run_once: true
+
+- name: Build FakeIP assignment payload
+  ansible.builtin.set_fact:
+    fakeip_payload: "{{ {'profiles': groups['all'] | map('extract', hostvars, 'rules') | map(attribute='profile') | list} }}"
+  run_once: true
+
+- name: Compute FakeIP ranges
+  ansible.builtin.command:
+    argv:
+      - node
+      - '{{ playbook_dir }}/../scripts/assign_vpn_addresses.mjs'
+      - fakeip
+    stdin: '{{ fakeip_payload | to_json }}'
+    chdir: '{{ playbook_dir }}/..'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  register: fakeip_ranges_raw
+
+- name: Expose FakeIP ranges by profile
+  ansible.builtin.set_fact:
+    fakeip_by_profile: '{{ fakeip_ranges_raw.stdout | from_json }}'
+
+- name: Set this host's FakeIP ranges
+  ansible.builtin.set_fact:
+    fakeip_inet4_range: '{{ fakeip_by_profile[rules.profile].inet4 }}'
+    fakeip_inet6_range: '{{ fakeip_by_profile[rules.profile].inet6 }}'
+
+- name: Show assigned FakeIP ranges
+  ansible.builtin.debug:
+    var: fakeip_by_profile
+  run_once: true

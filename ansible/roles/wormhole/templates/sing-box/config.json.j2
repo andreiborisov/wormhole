@@ -1,12 +1,9 @@
-{# --- Node identity and deterministic peer ordering --- #}
-{%- set node_idx = groups['all'].index(inventory_hostname) -%}
-{%- set deterministic_peers = peers | unique | sort -%}
+{# --- Deterministic peer ordering --- #}
+{%- set deterministic_peers = stable_peers | default(peers | unique | sort) -%}
 
 {# --- DNS/rule sources and advertised prefixes --- #}
 {%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
 {%- set _has_profile_ruleset = (wormhole_composed.domain_suffixes | default([])) | length > 0 -%}
-{%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
-{%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
 {%- set peer_custom_rules = deterministic_peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
 
@@ -16,12 +13,25 @@
 {%- set tun_route_excludes = local_host_route + peer_host_routes -%}
 
 {# --- Protocol-specific helper values (WG/VLESS) --- #}
-{%- set _wg_net = wg.subnet.split('/') if wg is defined and wg.subnet is defined else [] -%}
-{%- set _wg_base = _wg_net[0].rsplit('.', 1)[0] if _wg_net else '' -%}
-{%- set _wg_prefix = _wg_net[1] if _wg_net else '24' -%}
+{%- set _peer_source_cidrs = peer_source_cidrs | default({}) -%}
 {%- set _wg_clients = wireguard_clients_with_keys if wireguard_clients_with_keys is defined else [] -%}
 {%- set _has_wg_endpoints = wg_private_key is defined and (_wg_clients | length) > 0 -%}
 {%- set _vless_clients = vless_clients_with_credentials if vless_clients_with_credentials is defined else [] -%}
+{%- set _vpn_inbounds = ['awg-in'] + (['wg-ep'] if _has_wg_endpoints else []) -%}
+{%- set _wg_addrs = [] -%}
+{%- for p in deterministic_peers -%}
+  {%- set _cidr = hostvars[p]['wg']['subnet'] | default(wg.subnet) -%}
+  {%- set _net = _cidr.split('/') -%}
+  {%- set _ = _wg_addrs.append(_net[0].rsplit('.', 1)[0] ~ '.1/' ~ _net[1]) -%}
+{%- endfor -%}
+{%- set _wg_addrs = _wg_addrs | unique | list -%}
+{%- set _wg_unique = {} -%}
+{%- for client in _wg_clients -%}
+  {%- if client.key_id not in _wg_unique -%}
+    {%- set _ = _wg_unique.update({client.key_id: client}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set _wg_unique_clients = _wg_unique | dict2items | map(attribute='value') | list -%}
 {
   "dns": {
     "final": "upstream-local",
@@ -49,7 +59,11 @@
       {
         "domain_suffix": {{ peer_custom_rules | to_json }},
         "server": "upstream-local"
-      }{% endif %}
+      }{% endif %}{% for peer in deterministic_peers if (_peer_source_cidrs[peer] | default([])) | length > 0 %},
+      {
+        "source_ip_cidr": {{ _peer_source_cidrs[peer] | to_json }},
+        "server": "upstream-tunnel-{{ peer }}"
+      }{% endfor %}
     ],
     "servers": [
 {% for peer in deterministic_peers %}
@@ -83,57 +97,47 @@
   "endpoints": [
 {% for peer in deterministic_peers %}
     {
+      "advertise_exit_node": true,
       "advertise_routes": {{ advertise_routes | to_json }},
 {% if vault_tailscale_auth_key is defined and vault_tailscale_auth_key %}
       "auth_key": "{{ vault_tailscale_auth_key }}",
 {% endif %}
       "ephemeral": false,
-      "hostname": "{{ tailscale.hostname }}-{{ peer }}",
+      "hostname": "{{ tailscale.base_hostname }}-{{ inventory_hostname }}-{{ peer }}",
       "state_directory": "/var/lib/sing-box/tailscale-{{ peer }}",
       "tag": "ts-ep-{{ peer }}",
       "type": "tailscale"
     }{% if not loop.last or _has_wg_endpoints %},{% endif %}
 {% endfor %}
-{% if _has_wg_endpoints %}{% for peer in deterministic_peers %}
-{%- set peer_clients_map = {} -%}
-{%- for client in _wg_clients | selectattr('selected_peer', 'equalto', peer) -%}
-{%- if client.key_id not in peer_clients_map -%}
-{%- set _ = peer_clients_map.update({client.key_id: client}) -%}
-{%- endif -%}
-{%- endfor -%}
-{%- set peer_clients = peer_clients_map | dict2items | map(attribute='value') | list -%}
+{% if _has_wg_endpoints %}
     {
       "type": "wireguard",
-      "tag": "wg-ep-{{ peer }}",
-      "address": ["{{ _wg_base }}.1/{{ _wg_prefix }}"],
-      "listen_port": {{ (wg.port | int) + loop.index0 }},
+      "tag": "wg-ep",
+      "address": {{ _wg_addrs | to_json }},
+      "listen_port": {{ wg.port | int }},
       "private_key": "{{ wg_private_key }}",
       "peers": [
-{% for client in peer_clients %}
+{% for client in _wg_unique_clients %}
         {
           "public_key": "{{ client.public_key }}",
           "allowed_ips": ["{{ client.ip }}/32"]
         }{% if not loop.last %},{% endif %}
 {% endfor %}
       ]
-    }{% if not loop.last %},{% endif %}
-{% endfor %}{% endif %}
+    }{% endif %}
   ],
   "inbounds": [
-{% for peer in deterministic_peers %}
     {
       "type": "tun",
-      "tag": "awg-in-{{ peer }}",
-      "interface_name": "sb-awg-in-{{ peer }}",
-      "address": ["172.19.{{ 10 + loop.index0 }}.1/30"],
-      "include_interface": ["awg-in-{{ peer }}"],
+      "tag": "awg-in",
+      "interface_name": "sb-awg-in",
+      "address": ["172.19.10.1/30"],
+      "include_interface": ["awg-in"],
       "route_exclude_address": {{ tun_route_excludes | unique | list | to_json }},
-      "auto_route": {{ (loop.index0 == 0) | to_json }},
-      "strict_route": {{ (loop.index0 == 0) | to_json }},
+      "auto_route": true,
+      "strict_route": true,
       "mtu": 9000
-    }{% if not loop.last or (_vless_clients | length) > 0 %},{% endif %}
-{% endfor %}
-{% if (_vless_clients | length) > 0 %}
+    },
     {
       "type": "hysteria2",
       "tag": "tunnel-in",
@@ -147,7 +151,7 @@
         "certificate_path": "/etc/sing-box/tls/cert.pem",
         "key_path": "/etc/sing-box/tls/key.pem"
       }
-    },
+    }{% if (_vless_clients | length) > 0 %},
     {
       "type": "vless",
       "tag": "vless-in",
@@ -180,23 +184,7 @@
         "type": "grpc",
         "service_name": "{{ vless.grpc_service_name }}"
       }
-    }
-{% else %}
-    {
-      "type": "hysteria2",
-      "tag": "tunnel-in",
-      "listen": "0.0.0.0",
-      "listen_port": {{ hysteria2.port }},
-      "users": [
-        { "password": "{{ vault_hysteria2_password }}" }
-      ],
-      "tls": {
-        "enabled": true,
-        "certificate_path": "/etc/sing-box/tls/cert.pem",
-        "key_path": "/etc/sing-box/tls/key.pem"
-      }
-    }
-{% endif %}
+    }{% endif %}
   ],
   "log": {
     "level": "{{ log.level }}"
@@ -244,18 +232,26 @@
       {
         "port": [53],
         "action": "hijack-dns"
-      }{% for peer in deterministic_peers %},
+      }{% for peer in deterministic_peers %}
 {%- set peer_vless_auth_users = _vless_clients | selectattr('selected_peer', 'equalto', peer) | map(attribute='auth_user') | list -%}
+{%- if (_peer_source_cidrs[peer] | default([])) | length > 0 -%}
+,
       {
-        "inbound": ["ts-ep-{{ peer }}", "awg-in-{{ peer }}", "wg-ep-{{ peer }}"],
+        "inbound": {{ _vpn_inbounds | to_json }},
+        "source_ip_cidr": {{ _peer_source_cidrs[peer] | to_json }},
         "action": "route",
         "outbound": "peer-{{ peer }}"
-      }{% if peer_vless_auth_users %},
+      }{% endif %}{% if peer_vless_auth_users %},
       {
         "auth_user": {{ peer_vless_auth_users | to_json }},
         "action": "route",
         "outbound": "peer-{{ peer }}"
-      }{% endif %}{% endfor %}
+      }{% endif %},
+      {
+        "inbound": ["ts-ep-{{ peer }}"],
+        "action": "route",
+        "outbound": "peer-{{ peer }}"
+      }{% endfor %}
     ]
   }
 }

@@ -36,7 +36,7 @@ services:
       - ./amneziawg:/opt/amnezia/awg:ro
       - ./amneziawg/docker-entrypoint.fish:/opt/amnezia/docker-entrypoint.fish:ro
     healthcheck:
-      test: ["CMD-SHELL", "awg show | grep -q '^interface: awg-in-'"]
+      test: ["CMD-SHELL", "awg show | grep -q '^interface: awg-in$'"]
       interval: 10s
       timeout: 5s
       retries: 3

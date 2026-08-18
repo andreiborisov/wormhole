@@ -37,35 +37,31 @@
   ansible.builtin.set_fact:
     awg_client_profiles: >-
       {%- set result = [] -%}
-      {%- set _peer_count = (stable_peers | default([]) | length) -%}
       {%- for client in vpn_clients | default([]) -%}
-        {%- if _peer_count > 0 -%}
-          {%- for p_idx in range(_peer_count) -%}
-            {%- set selected_peer = stable_peers[p_idx] -%}
-            {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
-            {%- for mode in ['split', 'full'] -%}
-            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
-            {%- set profile_name = key_id ~ '-' ~ mode -%}
-            {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
-            {%- set _ = result.append({
-              'name': client.name,
-              'user': client.user,
-              'device': client.device,
-              'apply_rules': (mode == 'split'),
-              'mode': mode,
-              'entry': inventory_hostname,
-              'exit': selected_peer,
-              'selected_peer': selected_peer,
-              'config_stem': config_stem,
-              'key_id': key_id,
-              'profile_name': profile_name,
-              'awg_subnet': selected_awg_subnet,
-              'subnet': selected_awg_subnet,
-              'listen_port': (awg.port | int) + p_idx
-            }) -%}
-            {%- endfor -%}
+        {%- for selected_peer in stable_peers | default([]) -%}
+          {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
+          {%- for mode in ['split', 'full'] -%}
+          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- set profile_name = key_id ~ '-' ~ mode -%}
+          {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+          {%- set _ = result.append({
+            'name': client.name,
+            'user': client.user,
+            'device': client.device,
+            'apply_rules': (mode == 'split'),
+            'mode': mode,
+            'entry': inventory_hostname,
+            'exit': selected_peer,
+            'selected_peer': selected_peer,
+            'config_stem': config_stem,
+            'key_id': key_id,
+            'profile_name': profile_name,
+            'awg_subnet': selected_awg_subnet,
+            'subnet': selected_awg_subnet,
+            'listen_port': (awg.port | int)
+          }) -%}
           {%- endfor -%}
-        {%- endif -%}
+        {%- endfor -%}
       {%- endfor -%}
       {{ result }}
 
@@ -183,33 +179,30 @@
   ansible.builtin.set_fact:
     wg_client_profiles: >-
       {%- set result = [] -%}
-      {%- set _peer_count = (stable_peers | default([]) | length) -%}
       {%- for client in vpn_clients | default([]) -%}
-        {%- if _peer_count > 0 -%}
-          {%- for p_idx in range(_peer_count) -%}
-            {%- set selected_peer = stable_peers[p_idx] -%}
-            {%- for mode in ['split', 'full'] -%}
-            {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
-            {%- set profile_name = key_id ~ '-' ~ mode -%}
-            {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
-            {%- set _ = result.append({
-              'name': client.name,
-              'user': client.user,
-              'device': client.device,
-              'apply_rules': (mode == 'split'),
-              'mode': mode,
-              'entry': inventory_hostname,
-              'exit': selected_peer,
-              'selected_peer': selected_peer,
-              'config_stem': config_stem,
-              'key_id': key_id,
-              'profile_name': profile_name,
-              'subnet': wg.subnet,
-              'listen_port': (wg.port | default(51821) | int) + p_idx
-            }) -%}
-            {%- endfor -%}
+        {%- for selected_peer in stable_peers | default([]) -%}
+          {%- set selected_wg_subnet = hostvars[selected_peer]['wg']['subnet'] | default(wg.subnet) -%}
+          {%- for mode in ['split', 'full'] -%}
+          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- set profile_name = key_id ~ '-' ~ mode -%}
+          {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
+          {%- set _ = result.append({
+            'name': client.name,
+            'user': client.user,
+            'device': client.device,
+            'apply_rules': (mode == 'split'),
+            'mode': mode,
+            'entry': inventory_hostname,
+            'exit': selected_peer,
+            'selected_peer': selected_peer,
+            'config_stem': config_stem,
+            'key_id': key_id,
+            'profile_name': profile_name,
+            'subnet': selected_wg_subnet,
+            'listen_port': (wg.port | default(51822) | int)
+          }) -%}
           {%- endfor -%}
-        {%- endif -%}
+        {%- endfor -%}
       {%- endfor -%}
       {{ result }}
   when: wg.subnet is defined
@@ -352,11 +345,13 @@
       {{ dupes }}
   run_once: true
 
-- name: Build enriched VLESS client profile list
+- name: Build VLESS client profile matrix
   ansible.builtin.set_fact:
-    vless_clients_with_credentials: >-
+    vless_client_profiles: >-
+  ansible.builtin.set_fact:
+    vless_client_profiles: >-
       {%- set result = [] -%}
-      {%- for client in vless_clients_with_credentials | default([]) -%}
+      {%- for client in vpn_clients | default([]) -%}
         {%- for selected_peer in stable_peers | default([]) -%}
           {%- set auth_user = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
           {%- set _ = result.append({
@@ -366,14 +361,64 @@
             'auth_user': auth_user,
             'config_stem': 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer,
             'profile_name': auth_user,
-            'selected_peer': selected_peer,
-            'uuid': client.uuid
+            'selected_peer': selected_peer
           }) -%}
         {%- endfor -%}
       {%- endfor -%}
       {{ result }}
   when:
-    - (vless_clients_with_credentials | default([]) | length) > 0
+    - (vpn_clients | default([]) | length) > 0
+
+- name: Ensure VLESS key directory exists
+  ansible.builtin.file:
+    path: '{{ keys_dir }}/vless/{{ inventory_hostname }}'
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+  when:
+    - (vless_client_profiles | default([]) | length) > 0
+
+- name: Check if VLESS path UUID files exist
+  ansible.builtin.stat:
+    path: '{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.auth_user }}.uuid'
+  loop: '{{ vless_client_profiles | default([]) }}'
+  register: _vless_path_uuid_stats
+  delegate_to: localhost
+  become: false
+  when:
+    - (vless_client_profiles | default([]) | length) > 0
+
+- name: Generate missing VLESS path UUIDs
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import pathlib
+    import uuid
+    pathlib.Path("{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.item.auth_user }}.uuid").write_text(str(uuid.uuid4()) + "\n")
+    PY
+    chmod 0600 "{{ keys_dir }}/vless/{{ inventory_hostname }}/{{ item.item.auth_user }}.uuid"
+  loop: '{{ _vless_path_uuid_stats.results | default([]) }}'
+  when:
+    - (vless_client_profiles | default([]) | length) > 0
+    - item.stat is defined
+    - not item.stat.exists
+  no_log: true
+  delegate_to: localhost
+  become: false
+
+- name: Build enriched VLESS client profile list
+  ansible.builtin.set_fact:
+    vless_clients_with_credentials: >-
+      {%- set result = [] -%}
+      {%- for p in vless_client_profiles | default([]) -%}
+        {%- set _ = result.append(p | combine({
+          'uuid': (lookup('file', keys_dir ~ '/vless/' ~ inventory_hostname ~ '/' ~ p.auth_user ~ '.uuid') | trim)
+        })) -%}
+      {%- endfor -%}
+      {{ result }}
+  no_log: true
+  when:
+    - (vless_client_profiles | default([]) | length) > 0
 
 - name: Create VLESS client config directories
   ansible.builtin.file:

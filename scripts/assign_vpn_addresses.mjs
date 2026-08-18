@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /**
- * Deterministic VPN subnet and client-IP assignment.
+ * Deterministic VPN subnet, client-IP, and FakeIP assignment.
  *
  *   node scripts/assign_vpn_addresses.mjs subnets < payload.json
  *   node scripts/assign_vpn_addresses.mjs client-ips < payload.json
+ *   node scripts/assign_vpn_addresses.mjs fakeip < payload.json
  *   node scripts/assign_vpn_addresses.mjs --self-check
  *
  * Subnet seed: "{inventory}|{hostname}|{kind}"
  * Client IP seed: "{user}|{device}" (occupancy resolved in sorted-seed order
  * per subnet; split/full and extra paths reuse the same IP)
+ * FakeIP: unique inventory `rules.profile` names, sorted, equal CIDR slices
+ * of 198.18.0.0/15 and fc00::/18 (next power of two; leftover slices unused)
  */
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
@@ -16,10 +19,12 @@ import { pathToFileURL } from 'node:url'
 export const DEFAULT_POOL = '10.0.0.0/8'
 export const DEFAULT_PREFIX = 24
 export const DEFAULT_KINDS = ['awg', 'wg']
+export const FAKEIP_INET4_POOL = '198.18.0.0/15'
+export const FAKEIP_INET6_POOL = 'fc00::/18'
 
 /** Always skipped, even if the inventory reserved list is empty. */
 export const INTERNAL_RESERVED = [
-  '198.18.0.0/15', // sing-box FakeIP
+  FAKEIP_INET4_POOL, // sing-box FakeIP
   '100.64.0.0/10', // Tailscale / CGNAT
   '172.19.0.0/16', // sing-box TUN
 ]
@@ -28,7 +33,9 @@ export const INTERNAL_RESERVED = [
 const RESERVED_HOST_IDS = new Set([0, 1, 53])
 
 export function parseIpv4(ip) {
-  const parts = String(ip).split('.').map((p) => Number(p))
+  const parts = String(ip)
+    .split('.')
+    .map((p) => Number(p))
   if (
     parts.length !== 4 ||
     parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)
@@ -70,11 +77,164 @@ export function parseCidr(cidr) {
 
 export function cidrsOverlap(a, b) {
   const mask = a.prefix < b.prefix ? a.mask : b.mask
-  return ((a.network & mask) >>> 0) === ((b.network & mask) >>> 0)
+  return (a.network & mask) >>> 0 === (b.network & mask) >>> 0
+}
+
+export function extraBitsForCount(count) {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`profile count must be a positive integer, got ${count}`)
+  }
+  if (count === 1) return 0
+  return Math.ceil(Math.log2(count))
+}
+
+export function parseIpv6(addr) {
+  const text = String(addr).trim().toLowerCase()
+  if (text.includes('.')) {
+    throw new Error(`IPv4-mapped IPv6 is not supported: ${addr}`)
+  }
+  const halves = text.split('::')
+  if (halves.length > 2) throw new Error(`invalid IPv6 address: ${addr}`)
+
+  const parseGroups = (part) => {
+    if (part === '') return []
+    return part.split(':').map((group) => {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) {
+        throw new Error(`invalid IPv6 address: ${addr}`)
+      }
+      return Number.parseInt(group, 16)
+    })
+  }
+
+  const head = parseGroups(halves[0])
+  const tail = halves.length === 2 ? parseGroups(halves[1]) : []
+  const missing = 8 - head.length - tail.length
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) {
+    throw new Error(`invalid IPv6 address: ${addr}`)
+  }
+  const groups =
+    halves.length === 2 ? [...head, ...Array(missing).fill(0), ...tail] : head
+
+  let n = 0n
+  for (const group of groups) n = (n << 16n) + BigInt(group)
+  return n
+}
+
+export function formatIpv6(n) {
+  const groups = []
+  let x = BigInt(n) & ((1n << 128n) - 1n)
+  for (let i = 0; i < 8; i++) {
+    groups.unshift((x & 0xffffn).toString(16))
+    x >>= 16n
+  }
+
+  let bestStart = -1
+  let bestLen = 0
+  let i = 0
+  while (i < 8) {
+    if (groups[i] !== '0') {
+      i += 1
+      continue
+    }
+    let j = i
+    while (j < 8 && groups[j] === '0') j += 1
+    const len = j - i
+    if (len > bestLen) {
+      bestStart = i
+      bestLen = len
+    }
+    i = j
+  }
+
+  if (bestLen < 2) return groups.join(':')
+  const head = groups.slice(0, bestStart).join(':')
+  const tail = groups.slice(bestStart + bestLen).join(':')
+  return `${head}::${tail}`
+}
+
+export function parseIpv6Cidr(cidr) {
+  const text = String(cidr).trim()
+  const slash = text.lastIndexOf('/')
+  if (slash < 0) throw new Error(`invalid CIDR: ${cidr}`)
+  const prefix = Number(text.slice(slash + 1))
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 128) {
+    throw new Error(`invalid CIDR prefix: ${cidr}`)
+  }
+  const addr = parseIpv6(text.slice(0, slash))
+  const hostBits = 128n - BigInt(prefix)
+  const mask = prefix === 0 ? 0n : ((1n << BigInt(prefix)) - 1n) << hostBits
+  const network = addr & mask
+  return {
+    cidr: `${formatIpv6(network)}/${prefix}`,
+    prefix,
+    mask,
+    network,
+  }
+}
+
+function sliceIpv4(pool, index, extraBits) {
+  const newPrefix = pool.prefix + extraBits
+  if (newPrefix > 32) {
+    throw new Error(
+      `cannot split ${pool.cidr} into ${2 ** extraBits} FakeIP slices`,
+    )
+  }
+  const step = 2 ** (32 - newPrefix)
+  const network = (pool.network + index * step) >>> 0
+  return `${formatIpv4(network)}/${newPrefix}`
+}
+
+function sliceIpv6(pool, index, extraBits) {
+  const newPrefix = pool.prefix + extraBits
+  if (newPrefix > 128) {
+    throw new Error(
+      `cannot split ${pool.cidr} into ${2 ** extraBits} FakeIP slices`,
+    )
+  }
+  const step = 1n << BigInt(128 - newPrefix)
+  const network = pool.network + BigInt(index) * step
+  return `${formatIpv6(network)}/${newPrefix}`
+}
+
+export function uniqueSortedProfiles(profiles) {
+  if (!Array.isArray(profiles) || profiles.length === 0) {
+    throw new Error('profiles is required')
+  }
+  const names = []
+  const seen = new Set()
+  profiles.forEach((profile, index) => {
+    if (typeof profile !== 'string' || !profile.trim()) {
+      throw new Error(`profile ${index} must be a non-empty string`)
+    }
+    const name = profile.trim()
+    if (seen.has(name)) return
+    seen.add(name)
+    names.push(name)
+  })
+  names.sort()
+  return names
+}
+
+export function assignFakeipRanges(input) {
+  const names = uniqueSortedProfiles(input?.profiles)
+  const extraBits = extraBitsForCount(names.length)
+  const inet4Pool = parseCidr(input.inet4_pool || FAKEIP_INET4_POOL)
+  const inet6Pool = parseIpv6Cidr(input.inet6_pool || FAKEIP_INET6_POOL)
+  const result = {}
+  names.forEach((name, index) => {
+    result[name] = {
+      inet4: sliceIpv4(inet4Pool, index, extraBits),
+      inet6: sliceIpv6(inet6Pool, index, extraBits),
+    }
+  })
+  return result
 }
 
 export function digest(seed) {
-  return createHash('sha256').update(String(seed), 'utf8').digest().readBigUInt64BE(0)
+  return createHash('sha256')
+    .update(String(seed), 'utf8')
+    .digest()
+    .readBigUInt64BE(0)
 }
 
 function usableHostIds(numAddresses) {
@@ -84,12 +244,21 @@ function usableHostIds(numAddresses) {
     ids.push(i)
   }
   if (ids.length === 0) {
-    throw new Error(`no usable host addresses in a ${numAddresses}-address subnet`)
+    throw new Error(
+      `no usable host addresses in a ${numAddresses}-address subnet`,
+    )
   }
   return ids
 }
 
-export function pickSubnet(inventory, hostname, kind, pool, prefix, reservedNets) {
+export function pickSubnet(
+  inventory,
+  hostname,
+  kind,
+  pool,
+  prefix,
+  reservedNets,
+) {
   const poolNet = typeof pool === 'string' ? parseCidr(pool) : pool
   if (poolNet.prefix > prefix) {
     throw new Error(
@@ -125,10 +294,9 @@ export function assignSubnets(input) {
   if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
     throw new Error(`invalid prefix: ${input.prefix}`)
   }
-  const reservedNets = [
-    ...INTERNAL_RESERVED,
-    ...(input.reserved || []),
-  ].map(parseCidr)
+  const reservedNets = [...INTERNAL_RESERVED, ...(input.reserved || [])].map(
+    parseCidr,
+  )
   const hosts = input.hosts
   if (!Array.isArray(hosts) || hosts.length === 0) {
     throw new Error('hosts is required')
@@ -247,7 +415,10 @@ export function assignClientIps(input) {
   }
 
   return {
-    profiles: profiles.map((profile, index) => ({ ...profile, ip: ips[index] })),
+    profiles: profiles.map((profile, index) => ({
+      ...profile,
+      ip: ips[index],
+    })),
   }
 }
 
@@ -268,7 +439,10 @@ export function selfCheck() {
 
   const first = assignSubnets({ ...base, inventory: 'development' })
   const second = assignSubnets({ ...base, inventory: 'development' })
-  assert(JSON.stringify(first) === JSON.stringify(second), 'subnets are deterministic')
+  assert(
+    JSON.stringify(first) === JSON.stringify(second),
+    'subnets are deterministic',
+  )
 
   for (const host of base.hosts) {
     for (const kind of DEFAULT_KINDS) {
@@ -284,7 +458,10 @@ export function selfCheck() {
     first['ru-1'].awg !== production['ru-1'].awg,
     'inventory name must change the subnet',
   )
-  assert(first['ru-1'].awg !== first['sw-1'].awg, 'hostname must change the subnet')
+  assert(
+    first['ru-1'].awg !== first['sw-1'].awg,
+    'hostname must change the subnet',
+  )
   assert(first['ru-1'].awg !== first['ru-1'].wg, 'kind must change the subnet')
 
   const overridden = assignSubnets({
@@ -293,7 +470,10 @@ export function selfCheck() {
     hosts: ['ru-1'],
     overrides: { 'ru-1': { awg: '10.47.25.0/24' } },
   })
-  assert(overridden['ru-1'].awg === '10.47.25.0/24', 'inventory subnet override')
+  assert(
+    overridden['ru-1'].awg === '10.47.25.0/24',
+    'inventory subnet override',
+  )
 
   let reservedOverrideFailed = false
   try {
@@ -340,9 +520,15 @@ export function selfCheck() {
   const iphone = assigned.profiles.filter((p) => p.device === 'iphone')
   const macbook = assigned.profiles.filter((p) => p.device === 'macbook')
   assert(iphone.length === 2, 'expected split and full iphone profiles')
-  assert(iphone[0].ip === iphone[1].ip, 'split and full must share one IP per device')
+  assert(
+    iphone[0].ip === iphone[1].ip,
+    'split and full must share one IP per device',
+  )
   assert(macbook.length === 1, 'expected one macbook profile')
-  assert(macbook[0].ip !== iphone[0].ip, 'different devices must get different IPs')
+  assert(
+    macbook[0].ip !== iphone[0].ip,
+    'different devices must get different IPs',
+  )
 
   const uniqueIps = new Set(assigned.profiles.map((p) => p.ip))
   assert(uniqueIps.size === 2, 'modes must not consume extra host addresses')
@@ -361,8 +547,58 @@ export function selfCheck() {
     ],
   })
   assert(
-    sameDeviceAcrossPaths.profiles[0].ip === sameDeviceAcrossPaths.profiles[1].ip,
+    sameDeviceAcrossPaths.profiles[0].ip ===
+      sameDeviceAcrossPaths.profiles[1].ip,
     'a device keeps one IP in a subnet across entry/exit/mode',
+  )
+
+  const two = assignFakeipRanges({ profiles: ['ru', 'non-ru'] })
+  const twoAgain = assignFakeipRanges({ profiles: ['non-ru', 'ru', 'ru'] })
+  assert(
+    JSON.stringify(two) === JSON.stringify(twoAgain),
+    'FakeIP slices ignore host order and duplicate profiles',
+  )
+  assert(
+    two['non-ru'].inet4 === '198.18.0.0/16',
+    'non-ru gets the first IPv4 half',
+  )
+  assert(two.ru.inet4 === '198.19.0.0/16', 'ru gets the second IPv4 half')
+  assert(two['non-ru'].inet6 === 'fc00::/19', 'non-ru gets the first IPv6 half')
+  assert(two.ru.inet6 === 'fc00:2000::/19', 'ru gets the second IPv6 half')
+
+  const one = assignFakeipRanges({ profiles: ['ru'] })
+  assert(one.ru.inet4 === FAKEIP_INET4_POOL, 'one profile keeps the IPv4 pool')
+  assert(one.ru.inet6 === FAKEIP_INET6_POOL, 'one profile keeps the IPv6 pool')
+
+  const three = assignFakeipRanges({ profiles: ['c', 'a', 'b'] })
+  assert(three.a.inet4 === '198.18.0.0/17', 'three profiles start at /17')
+  assert(three.b.inet4 === '198.18.128.0/17', 'second of three is the next /17')
+  assert(
+    three.c.inet4 === '198.19.0.0/17',
+    'third of three leaves one /17 unused',
+  )
+  assert(three.a.inet6 === 'fc00::/20', 'three profiles split IPv6 at /20')
+  assert(
+    three.b.inet6 === 'fc00:1000::/20',
+    'second IPv6 slice is fc00:1000::/20',
+  )
+  assert(
+    three.c.inet6 === 'fc00:2000::/20',
+    'third IPv6 slice is fc00:2000::/20',
+  )
+
+  let fakeipOverflowFailed = false
+  try {
+    assignFakeipRanges({
+      profiles: ['a', 'b', 'c', 'd', 'e'],
+      inet4_pool: '198.18.0.0/30',
+    })
+  } catch {
+    fakeipOverflowFailed = true
+  }
+  assert(
+    fakeipOverflowFailed,
+    'too many FakeIP slices for a tiny pool must fail',
   )
 }
 
@@ -379,7 +615,7 @@ function isCli() {
 }
 
 const USAGE =
-  'Usage: node scripts/assign_vpn_addresses.mjs <subnets|client-ips> < payload.json\n' +
+  'Usage: node scripts/assign_vpn_addresses.mjs <subnets|client-ips|fakeip> < payload.json\n' +
   '       node scripts/assign_vpn_addresses.mjs --self-check\n'
 
 if (isCli()) {
@@ -395,14 +631,19 @@ if (isCli()) {
       process.exit(0)
     }
     const op = args[0]
-    if (op !== 'subnets' && op !== 'client-ips') {
+    if (op !== 'subnets' && op !== 'client-ips' && op !== 'fakeip') {
       process.stderr.write(USAGE)
       process.exit(1)
     }
     const raw = (await readStdin()).trim()
     if (!raw) throw new Error('stdin JSON payload is required')
     const input = JSON.parse(raw)
-    const output = op === 'subnets' ? assignSubnets(input) : assignClientIps(input)
+    const output =
+      op === 'subnets'
+        ? assignSubnets(input)
+        : op === 'client-ips'
+          ? assignClientIps(input)
+          : assignFakeipRanges(input)
     process.stdout.write(`${JSON.stringify(output)}\n`)
   } catch (err) {
     console.error(`error: ${err.message}`)

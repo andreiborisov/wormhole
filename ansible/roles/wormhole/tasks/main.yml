@@ -19,6 +19,15 @@
   tags:
     - always
 
+- name: Build peer facts
+  ansible.builtin.include_tasks:
+    file: peer-facts.yml
+    apply:
+      tags:
+        - always
+  tags:
+    - always
+
 # ── Kernel modules ────────────────────────────────────────────────────────────
 
 - name: Install linux-modules-extra
@@ -246,6 +255,7 @@
     src: amneziawg/docker-entrypoint.fish
     dest: '{{ deploy_dir }}/amneziawg/docker-entrypoint.fish'
     mode: '0755'
+  notify: Restart amneziawg
 
 - name: Deploy AWG interface config
   ansible.builtin.include_tasks:

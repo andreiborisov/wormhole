@@ -43,7 +43,7 @@ Each deployment is a directory under `ansible/inventories/` (gitignored). Copy t
 cp -R ansible/inventories.example ansible/inventories/production
 ```
 
-Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, Tailscale hostnames, each host's `rules.profile` (`ru` or `non-ru`), and the per-host `users:` allow list. Map people to devices in `group_vars/all/user_devices.yml`.
+Edit `ansible/inventories/production/hosts.local.yml` and fill in your server IPs, each host's `rules.profile` (`ru` or `non-ru`), and the per-host `users:` allow list. Map people to devices in `group_vars/all/user_devices.yml`. Tailscale nodes are named `{{ tailscale.base_hostname }}-<entry>-<exit>` (default base `wormhole`), advertise the profile CIDRs, and advertise themselves as exit nodes.
 
 ### 3. Fill in secrets
 
@@ -117,6 +117,10 @@ all:
 
 If a host still has `awg.subnet` / `wg.subnet`, those values are kept (production can stay pinned until you delete the keys).
 
+### FakeIP ranges
+
+sing-box FakeIP space (`198.18.0.0/15` and `fc00::/18`) is split across the unique `rules.profile` values in that inventory's `hosts.local.yml`, not per host and not from files under `rules/profiles/`. Names are sorted, then the pools are divided into the next power of two equal CIDRs (two profiles → halves; a third profile would use `/17` and `/20`, with one slice unused). Hosts that share a profile share the slice, so adding or removing a node does not change FakeIP. Adding a **profile** does; re-import split client configs after that.
+
 People and devices live in `group_vars/all/user_devices.yml`. Each host lists who may connect with `users:`. After render, configs are `configs/{user}/{device}/{protocol}/wormhole-{entry}-{exit}-{mode}.conf` and each person gets one AES-256 `configs/{user}.zip` (password from `vault_zip_passwords` in vault).
 
 ```yaml
@@ -131,7 +135,7 @@ users: [andrei, karina]
 
 ### Adding a node
 
-Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, `users:` allow list, and `rules.profile`, then re-run. If the new node is not reachable from the controller, the playbook jumps through an already-keyed inventory host automatically.
+Add a host to that inventory's `hosts.local.yml` with its IP, peer list, `users:` allow list, and `rules.profile`, then re-run. If the new node is not reachable from the controller, the playbook jumps through an already-keyed inventory host automatically.
 
 ```fish
 cd ansible
@@ -160,7 +164,7 @@ rules/
 
 scripts/
   compose_rules.mjs             # profile → domain sets + CIDR union; --write-ruleset for sing-box
-  assign_vpn_addresses.mjs      # deterministic AWG/WG subnets and client IPs
+  assign_vpn_addresses.mjs      # deterministic AWG/WG subnets, client IPs, FakeIP slices
   pack_user_configs.mjs         # AES-256 zip per user config tree
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
@@ -186,7 +190,7 @@ ansible/
     rulesets/{host}/            # Compiled profile rule-sets
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
-    tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG ranges
+    tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG and FakeIP
     tasks/expand-vpn-users.yml  # user_devices × users → vpn_clients
     tasks/compose-rules.yml     # Localhost Node compose for this host
     templates/sing-box/         # Jinja2 config template

@@ -12,7 +12,7 @@ table ip wormhole {
     ct state invalid drop
     ct state established,related accept
     iif lo accept
-    iifname "awg-in-*" accept
+    iifname "awg-in" accept
   }
 
   chain forward {
@@ -20,7 +20,7 @@ table ip wormhole {
     ct state invalid drop
     ct state established,related accept
     # Allow non-TPROXY'd VPN traffic (ICMP, etc.) to be forwarded
-    iifname "awg-in-*" ip saddr { {{ awg_peer_subnets | join(', ') }} } accept
+    iifname "awg-in" ip saddr { {{ awg_peer_subnets | join(', ') }} } accept
   }
 
   # NAT
@@ -28,6 +28,6 @@ table ip wormhole {
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;
     # Masquerade non-TPROXY'd VPN traffic (ICMP, etc.)
-    ip saddr { {{ awg_peer_subnets | join(', ') }} }{% for p in stable_peers %} oifname != "awg-in-{{ p }}"{% endfor %} masquerade
+    ip saddr { {{ awg_peer_subnets | join(', ') }} } oifname != "awg-in" masquerade
   }
 }

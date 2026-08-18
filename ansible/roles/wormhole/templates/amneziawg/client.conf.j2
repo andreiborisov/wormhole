@@ -1,6 +1,3 @@
-{%- set node_idx = groups['all'].index(inventory_hostname) -%}
-{%- set fakeip_inet4_range = '198.' ~ (18 + node_idx) ~ '.0.0/16' -%}
-{%- set fakeip_inet6_range = 'fc' ~ '%02x' | format(node_idx * 32) ~ '::/19' -%}
 {%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
 {%- set _apply_rules = (peer.mode | default('split')) == 'split' -%}
 {%- set _awg_subnet = peer.awg_subnet | default(awg.subnet) -%}
