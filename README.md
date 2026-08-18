@@ -67,6 +67,8 @@ fish setup.fish production
 
 The inventory name is required and must match a directory under `ansible/inventories/`. This will bootstrap SSH key authentication on all nodes, encrypt your secrets, install Ansible collections, and provision everything end to end.
 
+Playbooks probe every inventory host over SSH. If the controller cannot reach a node, they jump through another key-reachable host (shortest path, then inventory order — max two hops). You do not set `ProxyJump` in inventory. `--limit` still probes the whole inventory so a limited host can use another node as a bastion.
+
 ## ⚙️ Configuration
 
 ### Rule catalog
@@ -129,7 +131,7 @@ users: [andrei, karina]
 
 ### Adding a node
 
-Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, `users:` allow list, and `rules.profile`, then re-run:
+Add a host to that inventory's `hosts.local.yml` with its IP, Tailscale hostname, peer list, `users:` allow list, and `rules.profile`, then re-run. If the new node is not reachable from the controller, the playbook jumps through an already-keyed inventory host automatically.
 
 ```fish
 cd ansible
@@ -163,10 +165,14 @@ scripts/
   check_site.mjs                # client-vantage miniooni probe
   extract_rules_to_txt.mjs      # flatten profiles to .txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
+  discover_ssh_paths.mjs        # controller SSH path discovery (direct + jumps)
 
 ansible/
   site.yml                      # Full provisioning playbook
   bootstrap.yml                 # One-time SSH key setup
+  discover-ssh.yml              # Probe hosts and inject SSH jump args
+  bootstrap-round.yml           # Password prompt + key upload (one pass)
+  tasks/                        # Shared bootstrap / discover task lists
   inventories.example/          # Template — copy to inventories/<name>
     hosts.local.yml
     group_vars/all/

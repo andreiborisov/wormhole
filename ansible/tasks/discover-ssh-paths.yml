@@ -1,0 +1,111 @@
+---
+- name: Detect public key path from inventory
+  ansible.builtin.set_fact:
+    _inventory_key: "{{ hostvars[groups['all'][0]]['ansible_ssh_private_key_file'] | default('') }}"
+
+- name: Prompt for SSH public key path
+  ansible.builtin.pause:
+    prompt: Path to SSH public key
+    echo: true
+  register: _ssh_key_prompt
+  when: _inventory_key == ''
+
+- name: Set SSH public key path
+  ansible.builtin.set_fact:
+    _public_key: >-
+      {{
+        (
+          _inventory_key if _inventory_key != ''
+          else (_ssh_key_prompt.user_input | default('~/.ssh/id_ed25519.pub', true))
+        )
+        | expanduser
+      }}
+
+- name: Require SSH identity file
+  ansible.builtin.stat:
+    path: '{{ _public_key }}'
+  register: _ssh_identity_stat
+
+- name: Fail when SSH identity file is missing
+  ansible.builtin.fail:
+    msg: 'SSH identity file not found: {{ _public_key }}'
+  when: not _ssh_identity_stat.stat.exists
+
+- name: Reset SSH discover host list
+  ansible.builtin.set_fact:
+    _ssh_discover_hosts: []
+
+- name: Build SSH discover host list
+  ansible.builtin.set_fact:
+    _ssh_discover_hosts: "{{ _ssh_discover_hosts + [{'name': h, 'ansible_host': hostvars[h].ansible_host | default(h), 'ansible_user': hostvars[h].ansible_user | default('root')}] }}"
+  loop: "{{ groups['all'] }}"
+  loop_control:
+    loop_var: h
+
+- name: Discover SSH paths
+  ansible.builtin.command:
+    argv:
+      - node
+      - '{{ playbook_dir }}/../scripts/discover_ssh_paths.mjs'
+    stdin: "{{ {'identity_file': _public_key, 'hosts': _ssh_discover_hosts} | to_json }}"
+    chdir: '{{ playbook_dir }}/..'
+  environment:
+    PATH: '/opt/homebrew/bin:/usr/local/bin:{{ lookup("env", "PATH") }}'
+  register: _ssh_discover_raw
+  changed_when: false
+
+- name: Parse discovered SSH paths
+  ansible.builtin.set_fact:
+    wormhole_ssh_paths: '{{ _ssh_discover_raw.stdout | from_json }}'
+
+- name: Fail when no inventory host is reachable
+  ansible.builtin.fail:
+    msg: >-
+      No inventory host is reachable over SSH from this controller
+      (direct or via a key-authenticated jump).
+  when: (wormhole_ssh_paths | dict2items | selectattr('value.reachable') | list | length) == 0
+
+- name: Show discovered SSH paths
+  ansible.builtin.debug:
+    msg: "{{ _ssh_path_summary }}"
+  vars:
+    _ssh_path_summary: >-
+      {%- set lines = [] -%}
+      {%- for h in groups['all'] -%}
+        {%- set p = wormhole_ssh_paths[h] -%}
+        {%- if not p.reachable -%}
+          {%- set _ = lines.append(h ~ ' unreachable') -%}
+        {%- elif p.hops | length == 0 -%}
+          {%- set _ = lines.append(h ~ ' direct') -%}
+        {%- else -%}
+          {%- set _ = lines.append(h ~ ' via ' ~ (p.hops | join(', '))) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ lines }}
+
+- name: Apply discovered SSH connection args
+  ansible.builtin.add_host:
+    name: '{{ h }}'
+    groups: "{{ 'wormhole_reachable' if wormhole_ssh_paths[h].reachable else omit }}"
+    ansible_ssh_common_args: '{{ _common_args }}'
+    ansible_ssh_public_key_path: '{{ _public_key }}'
+    wormhole_ssh_discovered: 'yes'
+    wormhole_ssh_args_from_inventory: '{{ _manual }}'
+    wormhole_ssh_reachable: "{{ 'yes' if wormhole_ssh_paths[h].reachable else 'no' }}"
+    wormhole_ssh_key_ok: "{{ 'yes' if wormhole_ssh_paths[h].key_ok else 'no' }}"
+    wormhole_ssh_hops: "{{ wormhole_ssh_paths[h].hops | join(',') }}"
+    wormhole_ssh_proxy_command: '{{ wormhole_ssh_paths[h].proxy_command }}'
+    needs_bootstrap: "{{ 'yes' if (wormhole_ssh_paths[h].reachable and not wormhole_ssh_paths[h].key_ok) else 'no' }}"
+  vars:
+    _manual: >-
+      {{
+        (hostvars[h].wormhole_ssh_args_from_inventory | default(''))
+        if (hostvars[h].wormhole_ssh_discovered | default(false) | bool)
+        else (hostvars[h].ansible_ssh_common_args | default(''))
+      }}
+    _jump: "{{ wormhole_ssh_paths[h].jump if wormhole_ssh_paths[h].reachable else '' }}"
+    _common_args: '{{ _manual if _manual | length > 0 else _jump }}'
+  loop: "{{ groups['all'] }}"
+  loop_control:
+    loop_var: h
+    label: '{{ h }}'

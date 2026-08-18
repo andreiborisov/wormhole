@@ -6,14 +6,39 @@
 #   ansible-playbook -i inventories/production site.yml
 #   ansible-playbook -i inventories/production site.yml --tags client-configs
 
+- name: Discover SSH paths
+  ansible.builtin.import_playbook: discover-ssh.yml
+
+- name: Require an SSH path to every play host
+  hosts: all
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: '{{ ansible_playbook_python }}'
+  tags:
+    - always
+  tasks:
+    - name: Fail when this host has no SSH path
+      ansible.builtin.fail:
+        msg: >-
+          No SSH path to {{ inventory_hostname }}
+          ({{ hostvars[inventory_hostname].ansible_host | default('unknown') }}).
+          Tried the controller and key-reachable inventory hops (max 2).
+      when: not (wormhole_ssh_reachable | default(false) | bool)
+
 - name: Provision all nodes
   hosts: all
+  vars:
+    ansible_python_interpreter: auto
   roles:
     - wormhole
 
 - name: Pack encrypted per-user config zips
   hosts: all
   gather_facts: false
+  vars:
+    ansible_python_interpreter: auto
   tags:
     - client-configs
   tasks:

@@ -1,0 +1,22 @@
+---
+# Probe every inventory host and inject SSH jump args for later plays.
+# Always walks groups['all'] so --limit can still use another node as a bastion.
+#
+# Usage (imported by bootstrap.yml and site.yml):
+#   ansible-playbook -i inventories/production discover-ssh.yml
+
+- name: Discover SSH paths
+  hosts: all
+  connection: local
+  gather_facts: false
+  run_once: true
+  become: false
+  vars:
+    # Do not let interpreter discovery cache Homebrew Python on inventory hosts.
+    ansible_python_interpreter: '{{ ansible_playbook_python }}'
+  tags:
+    - always
+  tasks:
+    - ansible.builtin.import_tasks: tasks/discover-ssh-paths.yml
+      tags:
+        - always

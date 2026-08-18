@@ -5,102 +5,39 @@
 # ansible_ssh_private_key_file must be a public key (.pub): a filesystem key
 # or a Secretive PublicKeys/*.pub file. OpenSSH's -i accepts either.
 #
+# Hosts the controller cannot reach directly are bootstrapped through any
+# key-reachable inventory host (see discover-ssh.yml). Two rounds so a host
+# keyed in the first pass can be a jump in the second.
+#
 # Safe to re-run: hosts already reachable by key are skipped automatically.
 #
 # Usage:
 #   ansible-playbook -i inventories/production bootstrap.yml
 
-- name: Collect credentials
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Detect public key path from inventory
-      ansible.builtin.set_fact:
-        _inventory_key: "{{ hostvars[groups['all'][0]]['ansible_ssh_private_key_file'] | default('') }}"
+- name: Discover SSH paths
+  ansible.builtin.import_playbook: discover-ssh.yml
 
-    - name: Prompt for SSH public key path
-      ansible.builtin.pause:
-        prompt: "Path to SSH public key"
-        echo: true
-      register: _ssh_key_prompt
-      when: _inventory_key == ''
+- name: Bootstrap reachable hosts
+  ansible.builtin.import_playbook: bootstrap-round.yml
 
-    - name: Set SSH public key path
-      ansible.builtin.set_fact:
-        _public_key: >-
-          {{ _inventory_key if _inventory_key != ''
-             else (_ssh_key_prompt.user_input | default('~/.ssh/id_ed25519.pub', true)) }}
+- name: Discover SSH paths after new keys
+  ansible.builtin.import_playbook: discover-ssh.yml
 
-    - name: Test SSH key authentication for each host
-      ansible.builtin.command:
-        cmd: >-
-          ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no
-          -o IdentitiesOnly=yes -i {{ _public_key | quote }}
-          {{ hostvars[item]['ansible_user'] }}@{{ hostvars[item]['ansible_host'] }} true
-      loop: "{{ groups['all'] }}"
-      loop_control:
-        label: "{{ item }}"
-      register: _ssh_tests
-      failed_when: false
-      changed_when: false
+- name: Bootstrap hosts that became reachable
+  ansible.builtin.import_playbook: bootstrap-round.yml
 
-    - name: Build list of hosts that need bootstrapping
-      ansible.builtin.set_fact:
-        _bootstrap_hosts: "{{ _ssh_tests.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-
-    - name: Prompt for root password
-      ansible.builtin.pause:
-        prompt: "Root password for {{ item }}"
-        echo: false
-      loop: "{{ _bootstrap_hosts }}"
-      loop_control:
-        label: "{{ item }}"
-      register: _passwords
-      no_log: true
-
-    - name: Configure hosts needing bootstrap
-      ansible.builtin.add_host:
-        name: "{{ _bootstrap_hosts[idx] }}"
-        needs_bootstrap: true
-        ansible_password: "{{ _passwords.results[idx].user_input }}"
-        ansible_ssh_common_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
-        ansible_ssh_public_key_path: "{{ _public_key }}"
-      loop: "{{ range(_bootstrap_hosts | length) | list }}"
-      loop_control:
-        loop_var: idx
-        label: "{{ _bootstrap_hosts[idx] }}"
-      no_log: true
-
-    - name: Mark already-bootstrapped hosts
-      ansible.builtin.add_host:
-        name: "{{ item }}"
-        needs_bootstrap: false
-        ansible_ssh_public_key_path: "{{ _public_key }}"
-      loop: "{{ _ssh_tests.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
-      loop_control:
-        label: "{{ item }}"
-
-- name: Bootstrap SSH key authentication
+- name: Require an SSH path to every play host
   hosts: all
+  connection: local
   gather_facts: false
+  become: false
+  vars:
+    ansible_python_interpreter: '{{ ansible_playbook_python }}'
   tasks:
-    - name: Upload SSH public key
-      ansible.posix.authorized_key:
-        user: "{{ ansible_user }}"
-        key: "{{ lookup('file', ansible_ssh_public_key_path) }}"
-        state: present
-      when: needs_bootstrap | default(true)
-
-    - name: Disable SSH password authentication
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: "^#?PasswordAuthentication"
-        line: "PasswordAuthentication no"
-      when: needs_bootstrap | default(true)
-      notify: Restart sshd
-
-  handlers:
-    - name: Restart sshd
-      ansible.builtin.service:
-        name: ssh
-        state: restarted
+    - name: Fail when this host has no SSH path
+      ansible.builtin.fail:
+        msg: >-
+          No SSH path to {{ inventory_hostname }}
+          ({{ hostvars[inventory_hostname].ansible_host | default('unknown') }}).
+          Tried the controller and key-reachable inventory hops (max 2).
+      when: not (wormhole_ssh_reachable | default(false) | bool)

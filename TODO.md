@@ -4,8 +4,8 @@
 - [] Route subnets between nodes too
 - [] Add custom domains to AdGuard DNS records
 - [] Load, compress IP CIDRs automatically from upstream (GitHub Actions)
-- [] Split configuration files into categories
-- [] Allow to point to specific rulesets for each node (or perhaps a folder)
+- [x] Split configuration files into categories
+- [x] Allow to point to specific rulesets for each node (or perhaps a folder)
 - [] Generate .txt rules for GL.iNet routers (GitHub Actions) and host them on something that is available everywhere (like disk.yandex.ru)
 - [] Make sure everything is configurable and usable with multiple peers (generate multiple awg/wireguard configs to choose outbound wormhole used)
 - [] Cloud deployments (GitHub Actions)

@@ -1,5 +1,6 @@
 all:
   vars:
+    # SSH jumps are discovered at playbook start; do not set ProxyJump here.
     ansible_ssh_private_key_file: ~/.ssh/ansible.pub
     vpn_reserved_cidrs:
       - 10.0.0.0/16

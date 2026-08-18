@@ -1,0 +1,15 @@
+---
+- name: Upload SSH public key
+  ansible.posix.authorized_key:
+    user: '{{ ansible_user }}'
+    key: "{{ lookup('file', ansible_ssh_public_key_path) }}"
+    state: present
+  when: needs_bootstrap | default(false) | bool
+
+- name: Disable SSH password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+  when: needs_bootstrap | default(false) | bool
+  notify: Restart sshd

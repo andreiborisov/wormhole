@@ -1,0 +1,27 @@
+---
+# One discover-then-upload pass. Imported twice from bootstrap.yml so a host
+# keyed in the first round can be a jump in the second.
+
+- name: Collect passwords for hosts that need bootstrap
+  hosts: all
+  connection: local
+  gather_facts: false
+  run_once: true
+  become: false
+  vars:
+    ansible_python_interpreter: '{{ ansible_playbook_python }}'
+  tasks:
+    - ansible.builtin.import_tasks: tasks/collect-bootstrap-passwords.yml
+
+- name: Bootstrap SSH key authentication
+  hosts: wormhole_reachable
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: auto
+  tasks:
+    - ansible.builtin.import_tasks: tasks/bootstrap-ssh-key.yml
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
