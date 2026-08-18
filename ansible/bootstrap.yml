@@ -2,6 +2,9 @@
 # One-time bootstrap: uploads your SSH public key to fresh servers that only
 # have root password access, then disables password authentication.
 #
+# ansible_ssh_private_key_file must be a public key (.pub): a filesystem key
+# or a Secretive PublicKeys/*.pub file. OpenSSH's -i accepts either.
+#
 # Safe to re-run: hosts already reachable by key are skipped automatically.
 #
 # Usage:
@@ -11,28 +14,28 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Detect private key path from inventory
+    - name: Detect public key path from inventory
       ansible.builtin.set_fact:
-        _private_key: "{{ hostvars[groups['all'][0]]['ansible_ssh_private_key_file'] | default('') }}"
+        _inventory_key: "{{ hostvars[groups['all'][0]]['ansible_ssh_private_key_file'] | default('') }}"
 
     - name: Prompt for SSH public key path
       ansible.builtin.pause:
         prompt: "Path to SSH public key"
         echo: true
       register: _ssh_key_prompt
-      when: _private_key == ''
+      when: _inventory_key == ''
 
     - name: Set SSH public key path
       ansible.builtin.set_fact:
         _public_key: >-
-          {{ (_private_key ~ '.pub') if _private_key != ''
+          {{ _inventory_key if _inventory_key != ''
              else (_ssh_key_prompt.user_input | default('~/.ssh/id_ed25519.pub', true)) }}
 
     - name: Test SSH key authentication for each host
       ansible.builtin.command:
         cmd: >-
           ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no
-          {{ ('-i ' ~ _private_key) if _private_key != '' else '' }}
+          -o IdentitiesOnly=yes -i {{ _public_key | quote }}
           {{ hostvars[item]['ansible_user'] }}@{{ hostvars[item]['ansible_host'] }} true
       loop: "{{ groups['all'] }}"
       loop_control:
