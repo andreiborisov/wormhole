@@ -271,18 +271,21 @@
     src: router/Dockerfile
     dest: '{{ deploy_dir }}/router/Dockerfile'
     mode: '0644'
+  notify: Restart router
 
 - name: Deploy router entrypoint
   ansible.builtin.template:
     src: router/docker-entrypoint.fish
     dest: '{{ deploy_dir }}/router/docker-entrypoint.fish'
     mode: '0755'
+  notify: Restart router
 
 - name: Deploy nftables ruleset
   ansible.builtin.template:
     src: router/nftables/ruleset.nft.j2
     dest: '{{ deploy_dir }}/router/nftables/ruleset.nft'
     mode: '0644'
+  notify: Restart router
 
 - name: Deploy sing-box config
   ansible.builtin.template:

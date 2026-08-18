@@ -1,9 +1,9 @@
 ---
-- name: Restart sing-box
+- name: Restart router
   community.docker.docker_compose_v2:
     project_src: '{{ deploy_dir }}'
     services:
-      - sing-box
+      - router
     state: present
     recreate: always
 
@@ -12,5 +12,13 @@
     project_src: '{{ deploy_dir }}'
     services:
       - amneziawg
+    state: present
+    recreate: always
+
+- name: Restart sing-box
+  community.docker.docker_compose_v2:
+    project_src: '{{ deploy_dir }}'
+    services:
+      - sing-box
     state: present
     recreate: always

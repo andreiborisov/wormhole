@@ -11,7 +11,13 @@ services:
     volumes:
       - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
       - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
-    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "nft list table ip wormhole"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
 
   amneziawg:
     build:
@@ -21,7 +27,7 @@ services:
     network_mode: host
     depends_on:
       router:
-        condition: service_completed_successfully
+        condition: service_healthy
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -49,7 +55,7 @@ services:
     network_mode: host
     depends_on:
       router:
-        condition: service_completed_successfully
+        condition: service_healthy
       amneziawg:
         condition: service_healthy
     cap_add:

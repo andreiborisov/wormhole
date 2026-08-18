@@ -9,3 +9,7 @@ function apply_rules
 end
 
 apply_rules
+or exit 1
+
+echo "nftables applied; keeping container running"
+sleep infinity
