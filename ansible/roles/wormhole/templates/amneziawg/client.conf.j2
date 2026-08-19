@@ -1,10 +1,10 @@
 {%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
-{%- set _apply_rules = (peer.mode | default('split')) == 'split' -%}
+{%- set _apply_rules = peer.mode | default('auto') in ['auto', 'strict'] -%}
 {%- set _awg_subnet = peer.awg_subnet | default(awg.subnet) -%}
 {%- set allowed_ips = ([_awg_subnet, fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs) if _apply_rules else ['0.0.0.0/0', '::/0'] -%}
 {%- set _awg_base = _awg_subnet.split('/')[0].rsplit('.', 1)[0] -%}
 [Interface]
-# user = {{ peer.user }}, device = {{ peer.device }}, entry = {{ peer.entry | default(inventory_hostname) }}, exit = {{ peer.exit | default(peer.selected_peer) }}, mode = {{ peer.mode | default('split') }}
+# user = {{ peer.user }}, device = {{ peer.device }}, entry = {{ peer.entry | default(inventory_hostname) }}, exit = {{ peer.exit | default(peer.selected_peer) }}, mode = {{ peer.mode | default('auto') }}, policy = {{ peer.policy | default('direct') }}
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
 DNS        = {{ _awg_base }}.53

@@ -8,14 +8,16 @@
  *   node scripts/assign_vpn_addresses.mjs --self-check
  *
  * Subnet seed: "{inventory}|{hostname}|{kind}"
- * Client IP seed: "{user}|{device}" (occupancy resolved in sorted-seed order
- * per subnet; split/full and extra paths reuse the same IP)
+ * Client IP seed: "{user}|{device}|{policy}" (occupancy resolved in
+ * sorted-seed order per subnet; auto/direct share a policy IP, strict/full
+ * share the other; extra paths reuse the same IP)
  * FakeIP: unique inventory `rules.profile` names, sorted, equal CIDR slices
  * of 198.18.0.0/15 and fc00::/18 (next power of two; leftover slices unused)
  */
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 
+export const CLIENT_POLICIES = ['direct', 'full']
 export const DEFAULT_POOL = '10.0.0.0/8'
 export const DEFAULT_PREFIX = 24
 export const DEFAULT_KINDS = ['awg', 'wg']
@@ -348,7 +350,7 @@ export function clientIpSeed(profile, index = 0) {
   if (!profile || typeof profile !== 'object') {
     throw new Error(`profile ${index} must be an object`)
   }
-  const fields = ['user', 'device']
+  const fields = ['user', 'device', 'policy']
   for (const field of fields) {
     const value = profile[field]
     if (typeof value !== 'string' || !value) {
@@ -358,7 +360,12 @@ export function clientIpSeed(profile, index = 0) {
       throw new Error(`profile ${index} ${field} must not contain "|"`)
     }
   }
-  return `${profile.user}|${profile.device}`
+  if (!CLIENT_POLICIES.includes(profile.policy)) {
+    throw new Error(
+      `profile ${index} policy must be ${CLIENT_POLICIES.join(' or ')}`,
+    )
+  }
+  return `${profile.user}|${profile.device}|${profile.policy}`
 }
 
 export function assignClientIps(input) {
@@ -495,14 +502,17 @@ export function selfCheck() {
     device: 'iphone',
     entry: 'ru-1',
     exit: 'sw-1',
-    mode: 'split',
+    mode: 'auto',
+    policy: 'direct',
     subnet,
     ...overrides,
   })
   const profiles = [
-    clientProfile({ device: 'macbook', mode: 'full' }),
-    clientProfile({ device: 'iphone', mode: 'full' }),
-    clientProfile({ device: 'iphone', mode: 'split' }),
+    clientProfile({ device: 'macbook', mode: 'full', policy: 'full' }),
+    clientProfile({ device: 'iphone', mode: 'auto', policy: 'direct' }),
+    clientProfile({ device: 'iphone', mode: 'direct', policy: 'direct' }),
+    clientProfile({ device: 'iphone', mode: 'strict', policy: 'full' }),
+    clientProfile({ device: 'iphone', mode: 'full', policy: 'full' }),
   ]
   const assigned = assignClientIps({ profiles })
   const reordered = assignClientIps({ profiles: [...profiles].reverse() })
@@ -519,19 +529,31 @@ export function selfCheck() {
 
   const iphone = assigned.profiles.filter((p) => p.device === 'iphone')
   const macbook = assigned.profiles.filter((p) => p.device === 'macbook')
-  assert(iphone.length === 2, 'expected split and full iphone profiles')
+  const iphoneDirect = iphone.filter((p) => p.policy === 'direct')
+  const iphoneFull = iphone.filter((p) => p.policy === 'full')
+  assert(iphone.length === 4, 'expected four iphone mode profiles')
+  assert(iphoneDirect.length === 2, 'expected auto and direct iphone profiles')
+  assert(iphoneFull.length === 2, 'expected strict and full iphone profiles')
   assert(
-    iphone[0].ip === iphone[1].ip,
-    'split and full must share one IP per device',
+    iphoneDirect[0].ip === iphoneDirect[1].ip,
+    'auto and direct must share one IP per device',
+  )
+  assert(
+    iphoneFull[0].ip === iphoneFull[1].ip,
+    'strict and full must share one IP per device',
+  )
+  assert(
+    iphoneDirect[0].ip !== iphoneFull[0].ip,
+    'direct and full policies must use different IPs',
   )
   assert(macbook.length === 1, 'expected one macbook profile')
   assert(
-    macbook[0].ip !== iphone[0].ip,
+    macbook[0].ip !== iphoneDirect[0].ip,
     'different devices must get different IPs',
   )
 
   const uniqueIps = new Set(assigned.profiles.map((p) => p.ip))
-  assert(uniqueIps.size === 2, 'modes must not consume extra host addresses')
+  assert(uniqueIps.size === 3, 'two devices and two policies use three IPs')
   for (const ip of uniqueIps) {
     const last = Number(ip.split('.')[3])
     assert(
@@ -542,14 +564,24 @@ export function selfCheck() {
 
   const sameDeviceAcrossPaths = assignClientIps({
     profiles: [
-      clientProfile({ entry: 'ru-1', exit: 'sw-1', mode: 'split' }),
-      clientProfile({ entry: 'de-1', exit: 'sw-1', mode: 'full' }),
+      clientProfile({
+        entry: 'ru-1',
+        exit: 'sw-1',
+        mode: 'auto',
+        policy: 'direct',
+      }),
+      clientProfile({
+        entry: 'de-1',
+        exit: 'sw-1',
+        mode: 'direct',
+        policy: 'direct',
+      }),
     ],
   })
   assert(
     sameDeviceAcrossPaths.profiles[0].ip ===
       sameDeviceAcrossPaths.profiles[1].ip,
-    'a device keeps one IP in a subnet across entry/exit/mode',
+    'a device keeps one IP in a subnet across entry/exit for a policy',
   )
 
   const two = assignFakeipRanges({ profiles: ['ru', 'non-ru'] })

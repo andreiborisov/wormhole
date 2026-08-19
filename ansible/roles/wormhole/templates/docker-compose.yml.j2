@@ -71,6 +71,8 @@ services:
     volumes:
       - ./sing-box/config.json:/etc/sing-box/config.json:ro
       - ./sing-box/rule-set.srs:/etc/sing-box/rule-set.srs:ro
+      - ./sing-box/hop.srs:/etc/sing-box/hop.srs:ro
+      - ./sing-box/always_direct.srs:/etc/sing-box/always_direct.srs:ro
       - ./sing-box/data:/var/lib/sing-box
       - ./sing-box/tls:/etc/sing-box/tls:ro
     restart: unless-stopped

@@ -1,4 +1,13 @@
 {
   "include": ["international"],
-  "exclude": []
+  "exclude": [],
+  "direct": [
+    "international/entertainment",
+    "international/infrastructure",
+    "international/social",
+    "international/adult",
+    "international/trackers",
+    "international/zoom"
+  ],
+  "always_direct": ["ru"]
 }

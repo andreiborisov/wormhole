@@ -3,15 +3,18 @@
  * Flatten composed path rulesets to text for GL.iNet-style consumers.
  *
  * Paths match client configs: {entry}-{exit} from the inventory host/peer
- * matrix. Each file is the entry node's profile (plus host include/exclude)
- * with the exit node's dns.local_domains appended as domain suffixes.
+ * matrix. Each path writes two files from the entry node's profile (plus host
+ * include/exclude/direct/always_direct):
+ *
+ *   {entry}-{exit}-direct.txt  — direct domains, then direct CIDRs
+ *   {entry}-{exit}-full.txt    — hop domains, exit dns.local_domains, hop CIDRs
+ *
+ * always_direct is never written; the router leaves those dests on the ISP.
  *
  *   node scripts/extract_rules_to_txt.mjs
  *   node scripts/extract_rules_to_txt.mjs --inventory development
- *
- * Writes rules/paths/<entry>-<exit>.txt (domain suffixes, then CIDRs).
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from 'yaml'
@@ -28,6 +31,11 @@ function unique(values) {
 function asStringList(value) {
   if (!Array.isArray(value)) return []
   return value.filter((item) => typeof item === 'string' && item)
+}
+
+function txtBody(lines) {
+  const uniqueLines = unique(lines.filter((item) => typeof item === 'string' && item))
+  return uniqueLines.length ? `${uniqueLines.join('\n')}\n` : ''
 }
 
 export function resolveInventoryFile(inventory, cwd = process.cwd()) {
@@ -76,6 +84,8 @@ export function inventoryPaths(inventoryFile) {
         profile,
         include: asStringList(vars.rules?.include),
         exclude: asStringList(vars.rules?.exclude),
+        direct: asStringList(vars.rules?.direct),
+        always_direct: asStringList(vars.rules?.always_direct),
         localDomains: asStringList(exitVars.dns?.local_domains),
       })
     }
@@ -83,23 +93,39 @@ export function inventoryPaths(inventoryFile) {
   return paths
 }
 
-export function pathTxt(pathInfo, rulesDir = defaultRulesDir) {
+export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
   const composed = composeRules({
     profile: pathInfo.profile,
     include: pathInfo.include,
     exclude: pathInfo.exclude,
+    direct: pathInfo.direct,
+    always_direct: pathInfo.always_direct,
     rulesDir,
   })
-  const lines = unique([
-    ...composed.domain_suffixes,
+  const outDir = join(rulesDir, 'paths')
+  const directLines = [
+    ...composed.direct_domain_suffixes,
+    ...composed.direct_cidrs,
+  ]
+  const fullLines = [
+    ...composed.hop_domain_suffixes,
     ...pathInfo.localDomains,
-    ...composed.advertise_cidrs,
-  ])
-  return {
-    path: join(rulesDir, 'paths', `${pathInfo.name}.txt`),
-    count: lines.length,
-    text: lines.length ? `${lines.join('\n')}\n` : '',
-  }
+    ...composed.hop_cidrs,
+  ]
+  return [
+    {
+      kind: 'direct',
+      path: join(outDir, `${pathInfo.name}-direct.txt`),
+      count: unique(directLines.filter(Boolean)).length,
+      text: txtBody(directLines),
+    },
+    {
+      kind: 'full',
+      path: join(outDir, `${pathInfo.name}-full.txt`),
+      count: unique(fullLines.filter(Boolean)).length,
+      text: txtBody(fullLines),
+    },
+  ]
 }
 
 export function writePathTxts({
@@ -118,9 +144,12 @@ export function writePathTxts({
 
   const results = []
   for (const pathInfo of paths) {
-    const result = pathTxt(pathInfo, rulesDir)
-    writeFileSync(result.path, result.text)
-    results.push(result)
+    const stale = join(outDir, `${pathInfo.name}.txt`)
+    if (existsSync(stale)) unlinkSync(stale)
+    for (const result of pathTxts(pathInfo, rulesDir)) {
+      writeFileSync(result.path, result.text)
+      results.push(result)
+    }
   }
 
   return results

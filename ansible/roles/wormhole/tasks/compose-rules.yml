@@ -12,6 +12,10 @@
     wormhole_ruleset_dir: '{{ rulesets_dir }}/{{ inventory_hostname }}'
     wormhole_ruleset_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.json'
     wormhole_ruleset_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.srs'
+    wormhole_hop_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/hop.json'
+    wormhole_hop_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/hop.srs'
+    wormhole_always_direct_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/always_direct.json'
+    wormhole_always_direct_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/always_direct.srs'
 
 - name: Create local rule-set directory
   ansible.builtin.file:
@@ -23,7 +27,18 @@
 
 - name: Build compose argv
   ansible.builtin.set_fact:
-    wormhole_compose_argv: "{{ ['node', playbook_dir ~ '/../scripts/compose_rules.mjs', '--profile', rules.profile, '--write-ruleset', wormhole_ruleset_json] }}"
+    wormhole_compose_argv: "{{ [
+      'node',
+      playbook_dir ~ '/../scripts/compose_rules.mjs',
+      '--profile',
+      rules.profile,
+      '--write-ruleset',
+      wormhole_ruleset_json,
+      '--write-hop-ruleset',
+      wormhole_hop_json,
+      '--write-always-direct-ruleset',
+      wormhole_always_direct_json
+    ] }}"
 
 - name: Add extra include set names
   ansible.builtin.set_fact:
@@ -34,6 +49,16 @@
   ansible.builtin.set_fact:
     wormhole_compose_argv: "{{ wormhole_compose_argv + ['--exclude=' ~ item] }}"
   loop: '{{ rules.exclude | default([]) }}'
+
+- name: Add extra direct set names
+  ansible.builtin.set_fact:
+    wormhole_compose_argv: "{{ wormhole_compose_argv + ['--direct=' ~ item] }}"
+  loop: '{{ rules.direct | default([]) }}'
+
+- name: Add extra always_direct set names
+  ansible.builtin.set_fact:
+    wormhole_compose_argv: "{{ wormhole_compose_argv + ['--always-direct=' ~ item] }}"
+  loop: '{{ rules.always_direct | default([]) }}'
 
 - name: Compose rule sets
   ansible.builtin.command:
@@ -61,9 +86,49 @@
   become: false
   changed_when: false
 
-- name: Deploy compiled rule-set
+- name: Compile hop rule-set
+  ansible.builtin.command:
+    argv:
+      - sing-box
+      - rule-set
+      - compile
+      - '{{ wormhole_hop_json }}'
+      - -o
+      - '{{ wormhole_hop_srs }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Compile always_direct rule-set
+  ansible.builtin.command:
+    argv:
+      - sing-box
+      - rule-set
+      - compile
+      - '{{ wormhole_always_direct_json }}'
+      - -o
+      - '{{ wormhole_always_direct_srs }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Deploy compiled profile rule-set
   ansible.builtin.copy:
     src: '{{ wormhole_ruleset_srs }}'
     dest: '{{ deploy_dir }}/sing-box/rule-set.srs'
+    mode: '0644'
+  notify: Restart sing-box
+
+- name: Deploy compiled hop rule-set
+  ansible.builtin.copy:
+    src: '{{ wormhole_hop_srs }}'
+    dest: '{{ deploy_dir }}/sing-box/hop.srs'
+    mode: '0644'
+  notify: Restart sing-box
+
+- name: Deploy compiled always_direct rule-set
+  ansible.builtin.copy:
+    src: '{{ wormhole_always_direct_srs }}'
+    dest: '{{ deploy_dir }}/sing-box/always_direct.srs'
     mode: '0644'
   notify: Restart sing-box

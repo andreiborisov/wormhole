@@ -40,16 +40,18 @@
       {%- for client in vpn_clients | default([]) -%}
         {%- for selected_peer in stable_peers | default([]) -%}
           {%- set selected_awg_subnet = hostvars[selected_peer]['awg']['subnet'] | default(awg.subnet) -%}
-          {%- for mode in ['split', 'full'] -%}
-          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- for mode in ['auto', 'strict', 'direct', 'full'] -%}
+          {%- set policy = 'full' if mode in ['strict', 'full'] else 'direct' -%}
+          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ policy -%}
           {%- set profile_name = key_id ~ '-' ~ mode -%}
           {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
           {%- set _ = result.append({
             'name': client.name,
             'user': client.user,
             'device': client.device,
-            'apply_rules': (mode == 'split'),
+            'apply_rules': (mode in ['auto', 'strict']),
             'mode': mode,
+            'policy': policy,
             'entry': inventory_hostname,
             'exit': selected_peer,
             'selected_peer': selected_peer,
@@ -182,16 +184,18 @@
       {%- for client in vpn_clients | default([]) -%}
         {%- for selected_peer in stable_peers | default([]) -%}
           {%- set selected_wg_subnet = hostvars[selected_peer]['wg']['subnet'] | default(wg.subnet) -%}
-          {%- for mode in ['split', 'full'] -%}
-          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- for mode in ['auto', 'strict', 'direct', 'full'] -%}
+          {%- set policy = 'full' if mode in ['strict', 'full'] else 'direct' -%}
+          {%- set key_id = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ policy -%}
           {%- set profile_name = key_id ~ '-' ~ mode -%}
           {%- set config_stem = 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ mode -%}
           {%- set _ = result.append({
             'name': client.name,
             'user': client.user,
             'device': client.device,
-            'apply_rules': (mode == 'split'),
+            'apply_rules': (mode in ['auto', 'strict']),
             'mode': mode,
+            'policy': policy,
             'entry': inventory_hostname,
             'exit': selected_peer,
             'selected_peer': selected_peer,
@@ -348,21 +352,22 @@
 - name: Build VLESS client profile matrix
   ansible.builtin.set_fact:
     vless_client_profiles: >-
-  ansible.builtin.set_fact:
-    vless_client_profiles: >-
       {%- set result = [] -%}
       {%- for client in vpn_clients | default([]) -%}
         {%- for selected_peer in stable_peers | default([]) -%}
-          {%- set auth_user = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer -%}
+          {%- for policy in ['direct', 'full'] -%}
+          {%- set auth_user = client.user ~ '-' ~ client.device ~ '-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ policy -%}
           {%- set _ = result.append({
             'name': client.name,
             'user': client.user,
             'device': client.device,
             'auth_user': auth_user,
-            'config_stem': 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer,
+            'policy': policy,
+            'config_stem': 'wormhole-' ~ inventory_hostname ~ '-' ~ selected_peer ~ '-' ~ policy,
             'profile_name': auth_user,
             'selected_peer': selected_peer
           }) -%}
+          {%- endfor -%}
         {%- endfor -%}
       {%- endfor -%}
       {{ result }}
@@ -445,3 +450,42 @@
   become: false
   when:
     - (vless_clients_with_credentials | default([]) | length) > 0
+
+- name: Map per-exit policy source CIDRs
+  ansible.builtin.set_fact:
+    peer_policy_source_cidrs: >-
+      {%- set result = {} -%}
+      {%- for p in stable_peers | default([]) -%}
+        {%- set awg_rows = awg_client_profiles | default([]) -%}
+        {%- set wg_rows = wg_client_profiles | default([]) -%}
+        {%- set direct_ips = (
+          (awg_rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'direct') | map(attribute='ip') | list)
+          + (wg_rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'direct') | map(attribute='ip') | list)
+        ) -%}
+        {%- set full_ips = (
+          (awg_rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'full') | map(attribute='ip') | list)
+          + (wg_rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'full') | map(attribute='ip') | list)
+        ) -%}
+        {%- set _ = result.update({
+          p: {
+            'direct': (direct_ips | select('string') | unique | map('regex_replace', '$', '/32') | list),
+            'full': (full_ips | select('string') | unique | map('regex_replace', '$', '/32') | list)
+          }
+        }) -%}
+      {%- endfor -%}
+      {{ result }}
+
+- name: Map per-exit policy VLESS auth users
+  ansible.builtin.set_fact:
+    peer_policy_vless_users: >-
+      {%- set result = {} -%}
+      {%- set rows = vless_clients_with_credentials | default([]) -%}
+      {%- for p in stable_peers | default([]) -%}
+        {%- set _ = result.update({
+          p: {
+            'direct': (rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'direct') | map(attribute='auth_user') | list),
+            'full': (rows | selectattr('selected_peer', 'equalto', p) | selectattr('policy', 'equalto', 'full') | map(attribute='auth_user') | list)
+          }
+        }) -%}
+      {%- endfor -%}
+      {{ result }}

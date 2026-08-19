@@ -66,7 +66,7 @@ I5   = {{ awg.i5 }}
 {% for peer in unique_peers | dict2items | map(attribute='value') | list %}
 
 [Peer]
-# {{ peer.user }}/{{ peer.device }} exit={{ peer.selected_peer }}
+# {{ peer.user }}/{{ peer.device }} exit={{ peer.selected_peer }} policy={{ peer.policy | default('direct') }}
 PublicKey  = {{ peer.public_key }}
 AllowedIPs = {{ peer.ip }}/32
 {% endfor %}

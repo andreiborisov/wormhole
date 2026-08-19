@@ -8,8 +8,10 @@
  *   node scripts/compose_rules.mjs --profile ru
  *   node scripts/compose_rules.mjs --profile ru --include ru --exclude international/social
  *   node scripts/compose_rules.mjs --profile ru --write-ruleset /tmp/profile.json
+ *   node scripts/compose_rules.mjs --self-check
  */
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -116,34 +118,14 @@ export function expandSelectors(selectors, catalog) {
   return unique(keys).sort()
 }
 
-export function composeRules({
-  rulesDir = defaultRulesDir,
-  profile: profileName,
-  include = [],
-  exclude = [],
-} = {}) {
-  if (!profileName) {
-    throw new Error('profile is required')
-  }
-
-  const catalog = loadCatalog(rulesDir)
-  const profile = loadProfile(profileName, rulesDir)
-  const included = expandSelectors(
-    unique([...(profile.include || []), ...include]),
-    catalog,
-  )
-  const excludeSelectors = unique([...(profile.exclude || []), ...exclude])
-  const dropped = new Set(
-    excludeSelectors.length ? expandSelectors(excludeSelectors, catalog) : [],
-  )
-  const names = included.filter((name) => !dropped.has(name))
-
+function collectNamedSets(names, catalog, rulesDir) {
   const domain_sets = []
   const advertise_cidrs = []
   const domain_suffixes = []
 
   for (const name of names) {
     const entry = catalog[name]
+    if (!entry) continue
     if (entry.domain) {
       const path = join(rulesDir, entry.domain)
       const collected = collectFromSetFile(path)
@@ -161,11 +143,85 @@ export function composeRules({
   }
 
   return {
-    profile: profileName,
     names,
     domain_sets,
     advertise_cidrs: unique(advertise_cidrs),
     domain_suffixes: unique(domain_suffixes),
+  }
+}
+
+export function composeRules({
+  rulesDir = defaultRulesDir,
+  profile: profileName,
+  include = [],
+  exclude = [],
+  direct = [],
+  always_direct = [],
+} = {}) {
+  if (!profileName) {
+    throw new Error('profile is required')
+  }
+
+  const catalog = loadCatalog(rulesDir)
+  const profile = loadProfile(profileName, rulesDir)
+  const included = expandSelectors(
+    unique([...(profile.include || []), ...include]),
+    catalog,
+  )
+  const excludeSelectors = unique([...(profile.exclude || []), ...exclude])
+  const dropped = new Set(
+    excludeSelectors.length ? expandSelectors(excludeSelectors, catalog) : [],
+  )
+  const names = included.filter((name) => !dropped.has(name))
+  const nameSet = new Set(names)
+
+  const directSelectors = unique([...(profile.direct || []), ...direct])
+  const direct_names = directSelectors.length
+    ? expandSelectors(directSelectors, catalog).filter(
+        (name) => !dropped.has(name),
+      )
+    : []
+  for (const name of direct_names) {
+    if (!nameSet.has(name)) {
+      throw new Error(`direct set not in include: ${name}`)
+    }
+  }
+
+  const alwaysSelectors = unique([
+    ...(profile.always_direct || []),
+    ...always_direct,
+  ])
+  const always_direct_names = alwaysSelectors.length
+    ? expandSelectors(alwaysSelectors, catalog)
+    : []
+  for (const name of always_direct_names) {
+    if (nameSet.has(name)) {
+      throw new Error(`always_direct overlaps include: ${name}`)
+    }
+  }
+
+  const hop_names = names.filter((name) => !direct_names.includes(name))
+
+  const includedSets = collectNamedSets(names, catalog, rulesDir)
+  const directSets = collectNamedSets(direct_names, catalog, rulesDir)
+  const hopSets = collectNamedSets(hop_names, catalog, rulesDir)
+  const alwaysSets = collectNamedSets(always_direct_names, catalog, rulesDir)
+
+  return {
+    profile: profileName,
+    names,
+    direct_names,
+    hop_names,
+    always_direct_names,
+    domain_sets: includedSets.domain_sets,
+    advertise_cidrs: includedSets.advertise_cidrs,
+    domain_suffixes: includedSets.domain_suffixes,
+    direct_domain_suffixes: directSets.domain_suffixes,
+    direct_cidrs: directSets.advertise_cidrs,
+    hop_domain_suffixes: hopSets.domain_suffixes,
+    hop_cidrs: hopSets.advertise_cidrs,
+    always_direct_domain_suffixes: alwaysSets.domain_suffixes,
+    always_direct_cidrs: alwaysSets.advertise_cidrs,
   }
 }
 
@@ -177,34 +233,183 @@ export function profileRuleSet(composed) {
   }
 }
 
+export function destRuleSet(suffixes = [], cidrs = []) {
+  const rule = {}
+  if (suffixes.length) rule.domain_suffix = suffixes
+  if (cidrs.length) rule.ip_cidr = cidrs
+  return {
+    version: 4,
+    rules: Object.keys(rule).length ? [rule] : [],
+  }
+}
+
+export function hopRuleSet(composed) {
+  return destRuleSet(
+    composed.hop_domain_suffixes || [],
+    composed.hop_cidrs || [],
+  )
+}
+
+export function alwaysDirectRuleSet(composed) {
+  return destRuleSet(
+    composed.always_direct_domain_suffixes || [],
+    composed.always_direct_cidrs || [],
+  )
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(`self-check failed: ${message}`)
+}
+
+export function selfCheck(rulesDir = defaultRulesDir) {
+  const ru = composeRules({ profile: 'ru', rulesDir })
+  const includeSet = new Set(ru.names)
+  for (const name of ru.direct_names) {
+    assert(includeSet.has(name), `ru direct not in include: ${name}`)
+  }
+  for (const name of ru.always_direct_names) {
+    assert(!includeSet.has(name), `ru always_direct in include: ${name}`)
+  }
+  assert(
+    JSON.stringify(ru.hop_names) ===
+      JSON.stringify(ru.names.filter((name) => !ru.direct_names.includes(name))),
+    'ru hop is include minus direct',
+  )
+  assert(ru.always_direct_names.length > 0, 'ru profile has always_direct sets')
+  assert(ru.direct_names.length > 0, 'ru profile has direct sets')
+  assert(ru.hop_names.length > 0, 'ru profile has hop sets')
+
+  const nonRu = composeRules({ profile: 'non-ru', rulesDir })
+  assert(nonRu.direct_names.length === 0, 'non-ru direct is empty')
+  assert(
+    nonRu.always_direct_names.length === 0,
+    'non-ru always_direct is empty',
+  )
+  assert(
+    JSON.stringify(nonRu.hop_names) === JSON.stringify(nonRu.names),
+    'non-ru hop equals include when direct is empty',
+  )
+
+  let overlapFailed = false
+  try {
+    composeRules({
+      profile: 'ru',
+      always_direct: ['international'],
+      rulesDir,
+    })
+  } catch (err) {
+    overlapFailed = /always_direct overlaps include/.test(err.message)
+  }
+  assert(overlapFailed, 'always_direct overlapping include must fail')
+
+  let directOutsideFailed = false
+  try {
+    composeRules({
+      profile: 'non-ru',
+      direct: ['international'],
+      rulesDir,
+    })
+  } catch (err) {
+    directOutsideFailed = /direct set not in include/.test(err.message)
+  }
+  assert(directOutsideFailed, 'direct outside include must fail')
+
+  const hopJson = hopRuleSet(ru)
+  assert(hopJson.version === 4, 'hop ruleset version')
+  assert(Array.isArray(hopJson.rules), 'hop ruleset has rules')
+  const alwaysJson = alwaysDirectRuleSet(ru)
+  assert(
+    (alwaysJson.rules[0]?.domain_suffix || []).length > 0,
+    'always_direct ruleset has domains',
+  )
+
+  const emptyHop = destRuleSet([], [])
+  assert(emptyHop.rules.length === 0, 'empty dest ruleset has no rules')
+
+  const tmp = mkdtempSync(join(tmpdir(), 'wormhole-compose-'))
+  const catalogPath = join(tmp, 'profile.json')
+  writeFileSync(catalogPath, `${JSON.stringify(profileRuleSet(ru), null, 2)}\n`)
+  const roundTrip = readJson(catalogPath)
+  assert(
+    JSON.stringify(roundTrip) === JSON.stringify(profileRuleSet(ru)),
+    'profile ruleset round-trip',
+  )
+}
+
+function takeArg(arg, prefix, argv, i) {
+  if (arg.includes('=')) return { value: arg.slice(`${prefix}=`.length), i }
+  return { value: argv[i + 1], i: i + 1 }
+}
+
 function parseArgs(argv) {
-  const opts = { profile: null, include: [], exclude: [], writeRuleset: null }
+  const opts = {
+    profile: null,
+    include: [],
+    exclude: [],
+    direct: [],
+    always_direct: [],
+    writeRuleset: null,
+    writeHopRuleset: null,
+    writeAlwaysDirectRuleset: null,
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--profile' || arg.startsWith('--profile=')) {
-      opts.profile = arg.includes('=')
-        ? arg.slice('--profile='.length)
-        : argv[++i]
+      const taken = takeArg(arg, '--profile', argv, i)
+      opts.profile = taken.value
+      i = taken.i
       continue
     }
     if (arg === '--write-ruleset' || arg.startsWith('--write-ruleset=')) {
-      opts.writeRuleset = arg.includes('=')
-        ? arg.slice('--write-ruleset='.length)
-        : argv[++i]
+      const taken = takeArg(arg, '--write-ruleset', argv, i)
+      opts.writeRuleset = taken.value
+      i = taken.i
+      continue
+    }
+    if (
+      arg === '--write-hop-ruleset' ||
+      arg.startsWith('--write-hop-ruleset=')
+    ) {
+      const taken = takeArg(arg, '--write-hop-ruleset', argv, i)
+      opts.writeHopRuleset = taken.value
+      i = taken.i
+      continue
+    }
+    if (
+      arg === '--write-always-direct-ruleset' ||
+      arg.startsWith('--write-always-direct-ruleset=')
+    ) {
+      const taken = takeArg(arg, '--write-always-direct-ruleset', argv, i)
+      opts.writeAlwaysDirectRuleset = taken.value
+      i = taken.i
       continue
     }
     if (arg === '--include' || arg.startsWith('--include=')) {
-      const value = arg.includes('=')
-        ? arg.slice('--include='.length)
-        : argv[++i]
-      if (value) opts.include.push(value)
+      const taken = takeArg(arg, '--include', argv, i)
+      if (taken.value) opts.include.push(taken.value)
+      i = taken.i
       continue
     }
     if (arg === '--exclude' || arg.startsWith('--exclude=')) {
-      const value = arg.includes('=')
-        ? arg.slice('--exclude='.length)
-        : argv[++i]
-      if (value) opts.exclude.push(value)
+      const taken = takeArg(arg, '--exclude', argv, i)
+      if (taken.value) opts.exclude.push(taken.value)
+      i = taken.i
+      continue
+    }
+    if (arg === '--direct' || arg.startsWith('--direct=')) {
+      const taken = takeArg(arg, '--direct', argv, i)
+      if (taken.value) opts.direct.push(taken.value)
+      i = taken.i
+      continue
+    }
+    if (arg === '--always-direct' || arg.startsWith('--always-direct=')) {
+      const taken = takeArg(arg, '--always-direct', argv, i)
+      if (taken.value) opts.always_direct.push(taken.value)
+      i = taken.i
+      continue
+    }
+    if (arg === '--self-check') {
+      opts.selfCheck = true
       continue
     }
     if (arg === '-h' || arg === '--help') {
@@ -222,24 +427,45 @@ function isCli() {
   return import.meta.url === pathToFileURL(entry).href
 }
 
+const USAGE =
+  'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path] [--direct path] [--always-direct path] [--write-ruleset path] [--write-hop-ruleset path] [--write-always-direct-ruleset path]\n' +
+  '       node scripts/compose_rules.mjs --self-check\n'
+
 if (isCli()) {
   try {
     const opts = parseArgs(process.argv.slice(2))
+    if (opts.selfCheck) {
+      selfCheck()
+      process.stdout.write('ok\n')
+      process.exit(0)
+    }
     if (opts.help || !opts.profile) {
-      process.stdout.write(
-        'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path] [--write-ruleset path]\n',
-      )
+      process.stdout.write(USAGE)
       process.exit(opts.help ? 0 : 1)
     }
     const composed = composeRules({
       profile: opts.profile,
       include: opts.include,
       exclude: opts.exclude,
+      direct: opts.direct,
+      always_direct: opts.always_direct,
     })
     if (opts.writeRuleset) {
       writeFileSync(
         opts.writeRuleset,
         `${JSON.stringify(profileRuleSet(composed), null, 2)}\n`,
+      )
+    }
+    if (opts.writeHopRuleset) {
+      writeFileSync(
+        opts.writeHopRuleset,
+        `${JSON.stringify(hopRuleSet(composed), null, 2)}\n`,
+      )
+    }
+    if (opts.writeAlwaysDirectRuleset) {
+      writeFileSync(
+        opts.writeAlwaysDirectRuleset,
+        `${JSON.stringify(alwaysDirectRuleSet(composed), null, 2)}\n`,
       )
     }
     process.stdout.write(`${JSON.stringify(composed)}\n`)

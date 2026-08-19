@@ -96,7 +96,7 @@ export function selfCheck() {
 
   try {
     mkdirSync(userDir, { recursive: true })
-    writeFileSync(join(userDir, 'wormhole-ru-1-de-1-split.conf'), sample)
+    writeFileSync(join(userDir, 'wormhole-ru-1-de-1-auto.conf'), sample)
 
     writeFileSync(join(localDir, 'karina.zip'), 'stale')
 
@@ -125,7 +125,7 @@ export function selfCheck() {
     )
     assert(extract.status === 0, 'extract with password succeeded')
     const extracted = readFileSync(
-      join(extractDir, 'iphone', 'amneziawg', 'wormhole-ru-1-de-1-split.conf'),
+      join(extractDir, 'iphone', 'amneziawg', 'wormhole-ru-1-de-1-auto.conf'),
       'utf8',
     )
     assert(extracted === sample, 'extracted contents match')

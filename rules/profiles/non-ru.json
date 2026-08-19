@@ -1,4 +1,6 @@
 {
   "include": ["ru"],
-  "exclude": []
+  "exclude": [],
+  "direct": [],
+  "always_direct": []
 }
