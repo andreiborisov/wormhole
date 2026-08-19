@@ -22,6 +22,15 @@ table ip wormhole {
     iifname "awg-in" accept
   }
 
+  # MARK
+  # ip rule iif binds to ifindex and dies when awg-in is recreated.
+  # iifname + fwmark 100 does not; the matching ip rule is
+  # `fwmark 100 lookup 100` (see docker-entrypoint.fish).
+  chain prerouting_mark {
+    type filter hook prerouting priority mangle; policy accept;
+    iifname "awg-in" meta mark set 100
+  }
+
   # NAT
   # Never SNAT into sb-awg-in: that rewrote client IPs to 172.19.10.1 and
   # source_ip_cidr could not pick the Hysteria2 exit (everything looked local).

@@ -1,8 +1,11 @@
 #!/usr/bin/fish
 
 # Divert decrypted AWG client traffic into sing-box's TUN.
-# Table/pref 100 is ours; iif rules bind to ifindex and must be refreshed
-# whenever awg-in or sb-awg-in is recreated (container restart, reboot).
+#
+# nftables matches iifname awg-in (stable across ifindex changes) and sets
+# mark 100. The fwmark ip rule is not ifindex-bound; install it once.
+# Table 100 routes still bind to ifindex and must be refreshed whenever
+# awg-in or sb-awg-in is recreated (container restart, reboot).
 #
 # Table 100 is longest-prefix:
 #   AWG connected prefixes -> awg-in  (LAN / client-to-client)
@@ -23,12 +26,23 @@ set -g AWG_IF awg-in
 set -g TUN_IF sb-awg-in
 set -g TABLE 100
 set -g PREF 100
+set -g MARK 100
 
 function apply_nftables
   echo "Applying nftables rules..."
   nft -f /etc/nftables/ruleset.nft
   or return 1
   echo "nftables applied."
+end
+
+function apply_policy
+  echo "Installing fwmark $MARK lookup $TABLE pref $PREF..."
+  while ip -4 rule del pref $PREF 2>/dev/null
+  end
+  ip -4 rule add fwmark $MARK lookup $TABLE pref $PREF
+  or return 1
+  echo "Policy applied:"
+  ip -4 rule show pref $PREF
 end
 
 function interface_up --argument-names iface
@@ -45,8 +59,6 @@ end
 
 function routes_ok
   test (count (awg_lan_cidrs)) -gt 0
-  or return 1
-  string match -q "*iif $AWG_IF lookup $TABLE*" (ip rule show pref $PREF)
   or return 1
   string match -q "*default*dev $TUN_IF*" (ip -4 route show table $TABLE)
   or return 1
@@ -72,11 +84,7 @@ function apply_routes
   end
   ip route replace default dev $TUN_IF table $TABLE
   or return 1
-  ip rule del pref $PREF 2>/dev/null
-  ip rule add iif $AWG_IF lookup $TABLE pref $PREF
-  or return 1
   echo "Routes applied:"
-  ip rule show pref $PREF
   ip -4 route show table $TABLE
 end
 
@@ -90,7 +98,9 @@ function our_event --argument-names line
 end
 
 apply_nftables
+and apply_policy
 or exit 1
+
 
 ip -o monitor link address route | begin
   all_up; or echo "Waiting for $AWG_IF and $TUN_IF..."
