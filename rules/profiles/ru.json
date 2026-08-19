@@ -3,6 +3,7 @@
   "exclude": [],
   "direct": [
     "international/entertainment",
+    "international/github",
     "international/infrastructure",
     "international/zoom"
   ],

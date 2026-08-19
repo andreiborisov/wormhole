@@ -25,6 +25,12 @@
       "paths": ["addresses", "ipv6_addresses"]
     },
     {
+      "path": "international/github",
+      "source": "json-paths",
+      "url": "https://api.github.com/meta",
+      "paths": ["git"]
+    },
+    {
       "path": "international/infrastructure/github-pages",
       "source": "json-paths",
       "url": "https://api.github.com/meta",
