@@ -3,9 +3,10 @@
 # Divert decrypted AWG client traffic into sing-box's TUN.
 #
 # nftables matches iifname awg-in (stable across ifindex changes) and sets
-# mark 100. The fwmark ip rule is not ifindex-bound; install it once.
-# Table 100 routes still bind to ifindex and must be refreshed whenever
-# awg-in or sb-awg-in is recreated (container restart, reboot).
+# mark 100. The fwmark ip rule is not ifindex-bound, but systemd-networkd
+# still deletes it on restart (ManageForeignRoutingPolicyRules=yes).
+# Table 100 routes bind to ifindex and die when awg-in or sb-awg-in is
+# recreated. A single poll loop repairs whatever is missing.
 #
 # Table 100 is longest-prefix:
 #   AWG connected prefixes -> awg-in  (LAN / client-to-client)
@@ -13,26 +14,31 @@
 # DNS to .1 is local and never hits this table; nftables prerouting DNATs
 # it to the TUN /30 peer so hijack-dns still sees the query.
 #
-# nftables is applied first so the healthcheck can pass. amneziawg and
-# sing-box wait on that healthcheck, then create the interfaces this
-# loop waits for — do not require those ifaces for healthy or compose
+# The first poll loads nftables so the healthcheck can pass. amneziawg
+# and sing-box wait on that, then create the interfaces later polls
+# wait for — do not require those ifaces for healthy or compose
 # deadlocks.
-#
-# One long-lived `ip monitor` pipeline: subscribe, snapshot, then sync
-# on link/address/route events. Do not `read` a single event and exit —
-# fish waits for the writer, and `ip monitor` never exits.
 
 set -g AWG_IF awg-in
 set -g TUN_IF sb-awg-in
 set -g TABLE 100
 set -g PREF 100
 set -g MARK 100
+set -g POLL_INTERVAL 2
+
+function nft_ok
+  nft list table ip wormhole >/dev/null 2>&1
+end
 
 function apply_nftables
   echo "Applying nftables rules..."
   nft -f /etc/nftables/ruleset.nft
   or return 1
   echo "nftables applied."
+end
+
+function policy_ok
+  string match -q "*fwmark*lookup $TABLE*" (ip -4 rule show pref $PREF)
 end
 
 function apply_policy
@@ -49,7 +55,7 @@ function interface_up --argument-names iface
   string match -qr '[,<]UP[,>]' (ip -o link show $iface 2>/dev/null)
 end
 
-function all_up
+function tun_up
   interface_up $AWG_IF; and interface_up $TUN_IF
 end
 
@@ -60,10 +66,10 @@ end
 function routes_ok
   test (count (awg_lan_cidrs)) -gt 0
   or return 1
-  string match -q "*default*dev $TUN_IF*" (ip -4 route show table $TABLE)
+  string match -q "*default*dev $TUN_IF*" (ip -4 route show table $TABLE 2>/dev/null)
   or return 1
   for cidr in (awg_lan_cidrs)
-    string match -q "*$cidr*dev $AWG_IF*" (ip -4 route show table $TABLE)
+    string match -q "*$cidr*dev $AWG_IF*" (ip -4 route show table $TABLE 2>/dev/null)
     or return 1
   end
 end
@@ -88,25 +94,15 @@ function apply_routes
   ip -4 route show table $TABLE
 end
 
-function sync_routes
-  all_up; or return
+function sync
+  nft_ok; or apply_nftables
+  policy_ok; or apply_policy
+  tun_up; or return
   routes_ok; or apply_routes
 end
 
-function our_event --argument-names line
-  string match -q "*$AWG_IF*" $line; or string match -q "*$TUN_IF*" $line
-end
-
-apply_nftables
-and apply_policy
-or exit 1
-
-
-ip -o monitor link address route | begin
-  all_up; or echo "Waiting for $AWG_IF and $TUN_IF..."
-  sync_routes </dev/null
-  while read -l line
-    our_event $line; or continue
-    sync_routes </dev/null
-  end
+echo "Waiting for $AWG_IF and $TUN_IF..."
+while true
+  sync
+  sleep $POLL_INTERVAL
 end
