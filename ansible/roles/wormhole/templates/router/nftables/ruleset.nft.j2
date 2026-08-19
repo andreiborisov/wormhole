@@ -18,7 +18,7 @@ table ip wormhole {
     ct state invalid drop
     ct state established,related accept
     # Client-to-client stays on awg-in (table 100 has the AWG prefixes).
-    # Everything else, including DNS .53/32, is diverted to sb-awg-in.
+    # Everything else is policy-routed to sb-awg-in.
     iifname "awg-in" accept
   }
 
@@ -26,6 +26,14 @@ table ip wormhole {
   # Never SNAT into sb-awg-in: that rewrote client IPs to 172.19.10.1 and
   # source_ip_cidr could not pick the Hysteria2 exit (everything looked local).
   # Never SNAT AWG→WAN either: that was the silent leak onto this node's IP.
+
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    # .1 is local (pref 0 lookup local), so it never reaches table 100 / TUN.
+    # DNAT to the TUN /30 peer (not local) so the packet is forwarded into
+    # sb-awg-in and hijack-dns sees it. Conntrack restores .1 on the reply.
+    iifname "awg-in" meta l4proto { tcp, udp } th dport 53 dnat to {{ awg_tun.dns_dnat }}
+  }
 
   chain postrouting {
     type nat hook postrouting priority srcnat; policy accept;

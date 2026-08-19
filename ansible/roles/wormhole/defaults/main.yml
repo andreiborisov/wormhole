@@ -8,6 +8,11 @@ tcp_congestion_control: 'bbr'
 vpn_subnet_pool: '10.0.0.0/8'
 vpn_subnet_prefix: 24
 vpn_reserved_cidrs: []
+# sing-box AWG TUN. dns_dnat is the /30 peer of address — not local, so
+# prerouting DNAT of DNS can be forwarded into the TUN (not INPUT).
+awg_tun:
+  address: '172.19.10.1/30'
+  dns_dnat: '172.19.10.2'
 awg:
   port: 51820
 wg:

@@ -6,8 +6,9 @@
 #
 # Table 100 is longest-prefix:
 #   AWG connected prefixes -> awg-in  (LAN / client-to-client)
-#   advertised DNS .53/32  -> sb-awg-in (sing-box hijack-dns)
 #   default                -> sb-awg-in
+# DNS to .1 is local and never hits this table; nftables prerouting DNATs
+# it to the TUN /30 peer so hijack-dns still sees the query.
 #
 # nftables is applied first so the healthcheck can pass. amneziawg and
 # sing-box wait on that healthcheck, then create the interfaces this
@@ -42,13 +43,6 @@ function awg_lan_cidrs
   string split -f1 -- ' ' (ip -4 route show proto kernel dev $AWG_IF)
 end
 
-function awg_dns_ips
-  for ip in (string replace -rf '.*inet ([0-9.]+)/.*' '$1' (ip -4 -o addr show dev $AWG_IF))
-    set -l o (string split . $ip)
-    echo $o[1].$o[2].$o[3].53
-  end
-end
-
 function routes_ok
   test (count (awg_lan_cidrs)) -gt 0
   or return 1
@@ -60,15 +54,10 @@ function routes_ok
     string match -q "*$cidr*dev $AWG_IF*" (ip -4 route show table $TABLE)
     or return 1
   end
-  for dns in (awg_dns_ips)
-    string match -q "*$dns*dev $TUN_IF*" (ip -4 route show table $TABLE)
-    or return 1
-  end
 end
 
 function apply_routes
   set -l cidrs (awg_lan_cidrs)
-  set -l dns_ips (awg_dns_ips)
   if test (count $cidrs) -eq 0
     echo "No LAN prefixes on $AWG_IF yet..."
     return 1
@@ -79,10 +68,6 @@ function apply_routes
 
   for cidr in $cidrs
     ip route replace $cidr dev $AWG_IF table $TABLE
-    or return 1
-  end
-  for dns in $dns_ips
-    ip route replace $dns/32 dev $TUN_IF table $TABLE
     or return 1
   end
   ip route replace default dev $TUN_IF table $TABLE

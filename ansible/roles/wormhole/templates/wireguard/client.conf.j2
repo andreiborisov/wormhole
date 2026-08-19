@@ -7,7 +7,7 @@
 # user = {{ peer.user }}, device = {{ peer.device }}, entry = {{ peer.entry | default(inventory_hostname) }}, exit = {{ peer.exit | default(peer.selected_peer) }}, mode = {{ peer.mode | default('auto') }}, policy = {{ peer.policy | default('direct') }}
 Address    = {{ peer.ip }}/32
 PrivateKey = {{ peer_private_key }}
-DNS        = {{ _wg_base }}.53
+DNS        = {{ _wg_base }}.1
 
 [Peer]
 PublicKey           = {{ wg_public_key }}
