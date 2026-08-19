@@ -9,11 +9,6 @@
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
 {%- set peer_custom_rules = deterministic_peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
 
-{# --- Route exclusion inputs for local TUN inbounds --- #}
-{%- set peer_host_routes = deterministic_peers | map('extract', hostvars) | map(attribute='ansible_host') | map('regex_replace', '$', '/32') | list -%}
-{%- set local_host_route = [ansible_host ~ '/32'] -%}
-{%- set tun_route_excludes = local_host_route + peer_host_routes -%}
-
 {# --- Protocol-specific helper values (WG/VLESS) --- #}
 {%- set _peer_policy = peer_policy_source_cidrs | default({}) -%}
 {%- set _peer_vless = peer_policy_vless_users | default({}) -%}
@@ -141,10 +136,7 @@
       "tag": "awg-in",
       "interface_name": "sb-awg-in",
       "address": ["172.19.10.1/30"],
-      "include_interface": ["awg-in"],
-      "route_exclude_address": {{ tun_route_excludes | unique | list | to_json }},
-      "auto_route": true,
-      "strict_route": true,
+      "auto_route": false,
       "mtu": 9000
     },
     {

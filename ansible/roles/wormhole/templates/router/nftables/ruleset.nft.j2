@@ -17,7 +17,8 @@ table ip wormhole {
     type filter hook forward priority filter; policy accept;
     ct state invalid drop
     ct state established,related accept
-    # Client-to-client on the AWG iface; internet is diverted into sb-awg-in
+    # Client-to-client on awg-in. Internet is policy-routed to sb-awg-in
+    # by the router entrypoint (ip rule iif awg-in lookup 100).
     iifname "awg-in" accept
   }
 

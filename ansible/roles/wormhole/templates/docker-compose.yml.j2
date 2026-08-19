@@ -11,6 +11,9 @@ services:
     volumes:
       - ./router/nftables/ruleset.nft:/etc/nftables/ruleset.nft:ro
       - ./router/docker-entrypoint.fish:/docker-entrypoint.fish:ro
+    # Healthy as soon as nftables is loaded. Route install waits for
+    # awg-in / sb-awg-in inside the entrypoint — do not depend_on
+    # amneziawg or sing-box here or startup deadlocks.
     healthcheck:
       test: ["CMD-SHELL", "nft list table ip wormhole"]
       interval: 10s
