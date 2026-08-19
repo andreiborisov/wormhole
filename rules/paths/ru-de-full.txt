@@ -16,6 +16,7 @@ folivora.ai
 linear.app
 notion.so
 notion-static.com
+planetscale.com
 raycast.com
 raycast-releases.com
 sofi.com
