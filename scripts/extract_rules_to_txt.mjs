@@ -3,13 +3,15 @@
  * Flatten composed path rulesets to text for GL.iNet-style consumers.
  *
  * Paths match client configs: {entry}-{exit} from the inventory host/peer
- * matrix. Each path writes two files from the entry node's profile (plus host
+ * matrix. Each path writes three files from the entry node's profile (plus host
  * include/exclude/direct/always_direct):
  *
- *   {entry}-{exit}-direct.txt  — direct domains, then direct CIDRs
- *   {entry}-{exit}-full.txt    — hop domains, exit dns.local_domains, hop CIDRs
+ *   {entry}-{exit}-direct.txt         — direct domains, then direct CIDRs
+ *   {entry}-{exit}-full.txt           — hop domains, exit dns.local_domains, hop CIDRs
+ *   {entry}-{exit}-always-direct.txt  — always_direct domains, then always_direct CIDRs
  *
- * always_direct is never written; the router leaves those dests on the ISP.
+ * always_direct is not mixed into direct or full; the router uses that file to
+ * keep those dests on the ISP.
  *
  *   node scripts/extract_rules_to_txt.mjs
  *   node scripts/extract_rules_to_txt.mjs --inventory development
@@ -112,6 +114,10 @@ export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
     ...pathInfo.localDomains,
     ...composed.hop_cidrs,
   ]
+  const alwaysDirectLines = [
+    ...composed.always_direct_domain_suffixes,
+    ...composed.always_direct_cidrs,
+  ]
   return [
     {
       kind: 'direct',
@@ -124,6 +130,12 @@ export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
       path: join(outDir, `${pathInfo.name}-full.txt`),
       count: unique(fullLines.filter(Boolean)).length,
       text: txtBody(fullLines),
+    },
+    {
+      kind: 'always_direct',
+      path: join(outDir, `${pathInfo.name}-always-direct.txt`),
+      count: unique(alwaysDirectLines.filter(Boolean)).length,
+      text: txtBody(alwaysDirectLines),
     },
   ]
 }
@@ -144,8 +156,13 @@ export function writePathTxts({
 
   const results = []
   for (const pathInfo of paths) {
-    const stale = join(outDir, `${pathInfo.name}.txt`)
-    if (existsSync(stale)) unlinkSync(stale)
+    const stale = [
+      join(outDir, `${pathInfo.name}.txt`),
+      join(outDir, `${pathInfo.name}-always_direct.txt`),
+    ]
+    for (const path of stale) {
+      if (existsSync(path)) unlinkSync(path)
+    }
     for (const result of pathTxts(pathInfo, rulesDir)) {
       writeFileSync(result.path, result.text)
       results.push(result)

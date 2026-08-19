@@ -77,7 +77,7 @@ Named sets are paths under `rules/domain/` and `rules/cidr/` (no `.json`). The s
 
 - `include` / `exclude` — capture catalog (FakeIP + split `AllowedIPs`)
 - `direct` — subset of `include`; local-exit under auto/direct client modes; GL.iNet `{entry}-{exit}-direct.txt`
-- `always_direct` — never captured by split clients or GL.iNet (ISP). Disjoint from `include`. If a `0.0.0.0/0` phone still delivers the packet, the node exits it locally.
+- `always_direct` — disjoint from `include`. Split clients never catch it. GL.iNet gets `{entry}-{exit}-always-direct.txt` so the router can leave those dests on the ISP. If a `0.0.0.0/0` phone still delivers the packet, the node exits it locally.
 
 Hop is `include` minus `direct`. A host can add or drop paths:
 
@@ -101,7 +101,7 @@ Upstream CIDR lists are defined in `rules/cidr/sources.json`. Refresh the compre
 ```fish
 node scripts/compose_rules.mjs --profile ru
 node scripts/compose_rules.mjs --self-check
-node scripts/extract_rules_to_txt.mjs   # writes rules/paths/<entry>-<exit>-{direct,full}.txt
+node scripts/extract_rules_to_txt.mjs   # writes rules/paths/<entry>-<exit>-{direct,full,always-direct}.txt
 node scripts/update_cidr_rules.mjs
 act workflow_dispatch -W .github/workflows/update-cidr-rules.yml --bind
 ```
@@ -113,7 +113,7 @@ Four AmneziaWG / WireGuard configs per entry-exit (`wormhole-{entry}-{exit}-{mod
 - **direct** — `0.0.0.0/0`; same remainder policy as auto (phones that do not trust the ISP; GL.iNet ru-default tunnel)
 - **full** — `0.0.0.0/0`; same remainder policy as strict (foreign default; GL.iNet hop tunnel)
 
-auto and direct share a VPN key and IP; strict and full share another. GL.iNet does not send DNS through the tunnel: load `{entry}-{exit}-direct.txt` on the direct tunnel and `{entry}-{exit}-full.txt` on the full tunnel. `always_direct` is omitted from both files so the router leaves those dests on the ISP. VLESS emits only `direct` and `full` URIs.
+auto and direct share a VPN key and IP; strict and full share another. GL.iNet does not send DNS through the tunnel: load `{entry}-{exit}-direct.txt` on the direct tunnel, `{entry}-{exit}-full.txt` on the full tunnel, and `{entry}-{exit}-always-direct.txt` as ISP-only (not mixed into either tunnel catch). VLESS emits only `direct` and `full` URIs.
 
 From a client (not a mesh node), probe a site against a profile:
 
@@ -180,15 +180,16 @@ rules/
     international/              # same tree as domain/; CIDR-only sets live here too
       social/
   paths/
-    {entry}-{exit}-direct.txt   # GL.iNet catch for the ru-default tunnel
-    {entry}-{exit}-full.txt     # GL.iNet catch for the hop-default tunnel
+    {entry}-{exit}-direct.txt          # GL.iNet catch for the ru-default tunnel
+    {entry}-{exit}-full.txt            # GL.iNet catch for the hop-default tunnel
+    {entry}-{exit}-always-direct.txt   # GL.iNet ISP-only (do not send through VPN)
 
 scripts/
   compose_rules.mjs             # profile → include/direct/hop/always_direct; writes sing-box JSON
   assign_vpn_addresses.mjs      # deterministic AWG/WG subnets, client IPs, FakeIP slices
   pack_user_configs.mjs         # AES-256 zip per user config tree
   check_site.mjs                # client-vantage miniooni probe
-  extract_rules_to_txt.mjs      # flatten paths to GL.iNet -direct.txt and -full.txt
+  extract_rules_to_txt.mjs      # flatten paths to GL.iNet -direct/-full/-always-direct.txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
   discover_ssh_paths.mjs        # controller SSH path discovery (direct + jumps)
 
