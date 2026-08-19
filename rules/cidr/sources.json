@@ -31,7 +31,7 @@
       "paths": ["pages"]
     },
     {
-      "path": "international/infrastructure/shopping",
+      "path": "international/infrastructure/shopify",
       "source": "arin-org",
       "url": "https://whois.arin.net/rest/org/SHOPI-1/nets"
     },
