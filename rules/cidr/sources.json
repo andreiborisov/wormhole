@@ -25,13 +25,13 @@
       "paths": ["addresses", "ipv6_addresses"]
     },
     {
-      "path": "international/github",
+      "path": "international/github/api",
       "source": "json-paths",
       "url": "https://api.github.com/meta",
       "paths": ["git"]
     },
     {
-      "path": "international/infrastructure/github-pages",
+      "path": "international/github/pages",
       "source": "json-paths",
       "url": "https://api.github.com/meta",
       "paths": ["pages"]

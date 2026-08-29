@@ -5,8 +5,7 @@
     "international/entertainment",
     "international/github",
     "international/infrastructure",
-    "international/social",
-    "international/zoom"
+    "international/social"
   ],
   "always_direct": ["ru"]
 }
