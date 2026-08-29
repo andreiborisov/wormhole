@@ -2,10 +2,10 @@
   "include": ["international"],
   "exclude": [],
   "direct": [
-    "international/entertainment",
     "international/github",
     "international/infrastructure",
-    "international/social"
+    "international/social/discord",
+    "international/social/zoom"
   ],
   "always_direct": ["ru"]
 }
