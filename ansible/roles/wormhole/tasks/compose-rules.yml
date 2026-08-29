@@ -12,8 +12,10 @@
     wormhole_ruleset_dir: '{{ rulesets_dir }}/{{ inventory_hostname }}'
     wormhole_ruleset_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.json'
     wormhole_ruleset_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/profile.srs'
-    wormhole_hop_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/hop.json'
-    wormhole_hop_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/hop.srs'
+    wormhole_include_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/include.json'
+    wormhole_include_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/include.srs'
+    wormhole_direct_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/direct.json'
+    wormhole_direct_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/direct.srs'
     wormhole_always_direct_json: '{{ rulesets_dir }}/{{ inventory_hostname }}/always_direct.json'
     wormhole_always_direct_srs: '{{ rulesets_dir }}/{{ inventory_hostname }}/always_direct.srs'
 
@@ -34,8 +36,10 @@
       rules.profile,
       '--write-ruleset',
       wormhole_ruleset_json,
-      '--write-hop-ruleset',
-      wormhole_hop_json,
+      '--write-include-ruleset',
+      wormhole_include_json,
+      '--write-direct-ruleset',
+      wormhole_direct_json,
       '--write-always-direct-ruleset',
       wormhole_always_direct_json
     ] }}"
@@ -86,15 +90,28 @@
   become: false
   changed_when: false
 
-- name: Compile hop rule-set
+- name: Compile include dest rule-set
   ansible.builtin.command:
     argv:
       - sing-box
       - rule-set
       - compile
-      - '{{ wormhole_hop_json }}'
+      - '{{ wormhole_include_json }}'
       - -o
-      - '{{ wormhole_hop_srs }}'
+      - '{{ wormhole_include_srs }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Compile direct dest rule-set
+  ansible.builtin.command:
+    argv:
+      - sing-box
+      - rule-set
+      - compile
+      - '{{ wormhole_direct_json }}'
+      - -o
+      - '{{ wormhole_direct_srs }}'
   delegate_to: localhost
   become: false
   changed_when: false
@@ -119,10 +136,17 @@
     mode: '0644'
   notify: Restart sing-box
 
-- name: Deploy compiled hop rule-set
+- name: Deploy compiled include dest rule-set
   ansible.builtin.copy:
-    src: '{{ wormhole_hop_srs }}'
-    dest: '{{ deploy_dir }}/sing-box/hop.srs'
+    src: '{{ wormhole_include_srs }}'
+    dest: '{{ deploy_dir }}/sing-box/include.srs'
+    mode: '0644'
+  notify: Restart sing-box
+
+- name: Deploy compiled direct dest rule-set
+  ansible.builtin.copy:
+    src: '{{ wormhole_direct_srs }}'
+    dest: '{{ deploy_dir }}/sing-box/direct.srs'
     mode: '0644'
   notify: Restart sing-box
 
@@ -131,4 +155,10 @@
     src: '{{ wormhole_always_direct_srs }}'
     dest: '{{ deploy_dir }}/sing-box/always_direct.srs'
     mode: '0644'
+  notify: Restart sing-box
+
+- name: Remove unused hop dest rule-set
+  ansible.builtin.file:
+    path: '{{ deploy_dir }}/sing-box/hop.srs'
+    state: absent
   notify: Restart sing-box

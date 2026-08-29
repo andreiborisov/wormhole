@@ -4,7 +4,8 @@
 {# --- DNS/rule sources and advertised prefixes --- #}
 {%- set _rules_ip_cidrs = wormhole_composed.advertise_cidrs | default([]) -%}
 {%- set _has_profile_ruleset = (wormhole_composed.domain_suffixes | default([])) | length > 0 -%}
-{%- set _has_hop_ruleset = ((wormhole_composed.hop_domain_suffixes | default([])) | length > 0) or ((wormhole_composed.hop_cidrs | default([])) | length > 0) -%}
+{%- set _has_include_dest = ((wormhole_composed.domain_suffixes | default([])) | length > 0) or ((wormhole_composed.advertise_cidrs | default([])) | length > 0) -%}
+{%- set _has_direct_dest = ((wormhole_composed.direct_domain_suffixes | default([])) | length > 0) or ((wormhole_composed.direct_cidrs | default([])) | length > 0) -%}
 {%- set _has_always_direct = ((wormhole_composed.always_direct_domain_suffixes | default([])) | length > 0) or ((wormhole_composed.always_direct_cidrs | default([])) | length > 0) -%}
 {%- set advertise_routes = [fakeip_inet4_range, fakeip_inet6_range] + _rules_ip_cidrs -%}
 {%- set peer_custom_rules = deterministic_peers | map('extract', hostvars) | map(attribute='dns.local_domains', default=[]) | flatten -%}
@@ -16,7 +17,6 @@
 {%- set _has_wg_endpoints = wg_private_key is defined and (_wg_clients | length) > 0 -%}
 {%- set _vless_clients = vless_clients_with_credentials if vless_clients_with_credentials is defined else [] -%}
 {%- set _vpn_inbounds = ['awg-in'] + (['wg-ep'] if _has_wg_endpoints else []) -%}
-{%- set _sniff_inbounds = _vpn_inbounds + (['vless-in'] if (_vless_clients | length) > 0 else []) -%}
 {%- set _wg_addrs = [] -%}
 {%- for p in deterministic_peers -%}
   {%- set _cidr = hostvars[p]['wg']['subnet'] | default(wg.subnet) -%}
@@ -224,10 +224,16 @@
         "path": "/etc/sing-box/rule-set.srs"
       },
       {
-        "tag": "hop",
+        "tag": "include",
         "type": "local",
         "format": "binary",
-        "path": "/etc/sing-box/hop.srs"
+        "path": "/etc/sing-box/include.srs"
+      },
+      {
+        "tag": "direct",
+        "type": "local",
+        "format": "binary",
+        "path": "/etc/sing-box/direct.srs"
       },
       {
         "tag": "always_direct",
@@ -241,10 +247,6 @@
     },
     "final": "direct",
     "rules": [
-      {
-        "inbound": {{ _sniff_inbounds | to_json }},
-        "action": "sniff"
-      },
       {
         "inbound": ["tunnel-in"],
         "port": [53],
@@ -261,44 +263,54 @@
         "inbound": {{ _vpn_inbounds | to_json }},
         "port": [53],
         "action": "hijack-dns"
-      }{% if _has_always_direct %},
-      {
-        "rule_set": ["always_direct"],
-        "action": "route",
-        "outbound": "direct"
-      }{% endif %}{% for peer in deterministic_peers %}
+      }{% for peer in deterministic_peers %}
 {%- set _pol = _peer_policy[peer] | default({}) -%}
 {%- set _vless_pol = _peer_vless[peer] | default({}) -%}
 {%- set _direct_cidrs = _pol['direct'] | default([]) -%}
 {%- set _full_cidrs = _pol['full'] | default([]) -%}
 {%- set _direct_vless = _vless_pol['direct'] | default([]) -%}
 {%- set _full_vless = _vless_pol['full'] | default([]) -%}
+{%- set _vpn_policy_cidrs = _direct_cidrs + _full_cidrs -%}
+{%- set _vless_policy_users = _direct_vless + _full_vless -%}
 {%- set _peer_domains = hostvars[peer]['dns']['local_domains'] | default([]) -%}
-{%- if _peer_domains and (_direct_cidrs | length > 0 or _full_cidrs | length > 0) -%}
+{%- if _peer_domains and (_vpn_policy_cidrs | length > 0) -%}
 ,
       {
         "inbound": {{ _vpn_inbounds | to_json }},
-        "source_ip_cidr": {{ (_direct_cidrs + _full_cidrs) | to_json }},
+        "source_ip_cidr": {{ _vpn_policy_cidrs | to_json }},
         "domain_suffix": {{ _peer_domains | to_json }},
         "action": "route",
         "outbound": "peer-{{ peer }}"
-      }{% endif %}{% if _peer_domains and (_direct_vless | length > 0 or _full_vless | length > 0) %},
+      }{% endif %}{% if _peer_domains and (_vless_policy_users | length > 0) %},
       {
-        "auth_user": {{ (_direct_vless + _full_vless) | to_json }},
+        "auth_user": {{ _vless_policy_users | to_json }},
         "domain_suffix": {{ _peer_domains | to_json }},
         "action": "route",
         "outbound": "peer-{{ peer }}"
-      }{% endif %}{% if _has_hop_ruleset and (_direct_cidrs | length > 0) %},
+      }{% endif %}{% if _has_direct_dest and (_direct_cidrs | length > 0) %},
       {
         "inbound": {{ _vpn_inbounds | to_json }},
         "source_ip_cidr": {{ _direct_cidrs | to_json }},
-        "rule_set": ["hop"],
+        "rule_set": ["direct"],
         "action": "route",
-        "outbound": "peer-{{ peer }}"
-      }{% endif %}{% if _has_hop_ruleset and (_direct_vless | length > 0) %},
+        "outbound": "direct"
+      }{% endif %}{% if _has_direct_dest and (_direct_vless | length > 0) %},
       {
         "auth_user": {{ _direct_vless | to_json }},
-        "rule_set": ["hop"],
+        "rule_set": ["direct"],
+        "action": "route",
+        "outbound": "direct"
+      }{% endif %}{% if _has_include_dest and (_vpn_policy_cidrs | length > 0) %},
+      {
+        "inbound": {{ _vpn_inbounds | to_json }},
+        "source_ip_cidr": {{ _vpn_policy_cidrs | to_json }},
+        "rule_set": ["include"],
+        "action": "route",
+        "outbound": "peer-{{ peer }}"
+      }{% endif %}{% if _has_include_dest and (_vless_policy_users | length > 0) %},
+      {
+        "auth_user": {{ _vless_policy_users | to_json }},
+        "rule_set": ["include"],
         "action": "route",
         "outbound": "peer-{{ peer }}"
       }{% endif %}{% if _direct_cidrs | length > 0 %},

@@ -22,7 +22,7 @@ The setup is fully symmetric: every node runs the same configuration and can pee
 - [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 - Node.js on the Ansible controller (used to compose rule sets and pack client zips)
 - [7-Zip](https://www.7-zip.org) (`7zz`) on the Ansible controller (AES-256 client zips)
-- [sing-box](https://sing-box.sagernet.org) on the Ansible controller (compiles the profile rule-set)
+- [sing-box](https://sing-box.sagernet.org) on the Ansible controller (compiles profile, include, and direct rule-sets)
 - At least two fresh VPS instances with root access (one `ru`, one `non-ru`)
 
 #### For automatic setup
@@ -75,9 +75,9 @@ Playbooks probe every inventory host over SSH. If the controller cannot reach a 
 
 Named sets are paths under `rules/domain/` and `rules/cidr/` (no `.json`). The same path on both trees is one set (domains + CIDRs). A profile entry may be a file or a folder: `international` loads every international domain and CIDR, `international/social` only that subtree. Profiles `rules/profiles/ru.json` and `rules/profiles/non-ru.json` list which paths a node loads:
 
-- `include` / `exclude` — capture catalog (FakeIP + split `AllowedIPs`)
-- `direct` — subset of `include`; local-exit under auto/direct client modes; GL.iNet `{entry}-{exit}-direct.txt`
-- `always_direct` — disjoint from `include`. Split clients never catch it. GL.iNet gets `{entry}-{exit}-always-direct.txt` so the router can leave those dests on the ISP. If a `0.0.0.0/0` phone still delivers the packet, the node exits it locally.
+- `include` / `exclude` — capture catalog (FakeIP DNS + split `AllowedIPs` + GL.iNet `{entry}-{exit}.txt`)
+- `direct` — subset of `include`; local-exit dest match on auto/direct client modes only
+- `always_direct` — disjoint from `include`. Split clients never catch it. GL.iNet `{entry}-{exit}-always-direct.txt` keeps those dests on the ISP. A `0.0.0.0/0` client that still delivers the packet follows unmatched default (local on auto/direct, peer on strict/full).
 
 Hop is `include` minus `direct`. A host can add or drop paths:
 
@@ -92,28 +92,28 @@ rules:
 
 Missing `rules.profile` fails the playbook.
 
-**Domains** in `include` are a sing-box rule-set compiled on the Ansible controller and copied onto the node (`type: local`). They FakeIP-hijack DNS. Hop and `always_direct` compile to additional rule-sets used for routing. Edit a file under `rules/domain/ru/` or `rules/domain/international/`, then re-run the playbook.
+**Domains** in `include` are a sing-box rule-set compiled on the Ansible controller (`profile.srs`). They FakeIP-hijack DNS. Include dest (`include.srs`: domains **or** CIDRs) hairpins to the peer. Direct dest (`direct.srs`) local-exits, but only for auto/direct clients — and **before** include, because `direct ⊂ include`. `always_direct` is DNS-only (real IPs, never FakeIP). Edit a file under `rules/domain/ru/` or `rules/domain/international/`, then re-run the playbook.
 
-**CIDRs** in `include` are composed at deploy time into Tailscale `advertise_routes` and split-mode WireGuard / AmneziaWG `AllowedIPs`. Hop CIDRs also go into the hop rule-set. Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
+**CIDRs** in `include` are composed at deploy time into Tailscale `advertise_routes`, split-mode WireGuard / AmneziaWG `AllowedIPs`, and dest rule-sets (orthogonal to FakeIP/domain matches). Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
 
 Upstream CIDR lists are defined in `rules/cidr/sources.json`. Refresh the compressed JSON locally, or via the daily GitHub Action. GL.iNet `.txt` maps are local-only (`extract_rules_to_txt.mjs`). These endpoints are public; do not commit `.env` or secrets. The Node script is the source of truth; `act` checks the workflow wrapper. `--bind` keeps generated JSON on the host. Apple Silicon may need `--container-architecture linux/arm64`. Fetch needs network (`act`'s default Docker network is enough).
 
 ```fish
 node scripts/compose_rules.mjs --profile ru
 node scripts/compose_rules.mjs --self-check
-node scripts/extract_rules_to_txt.mjs   # writes rules/paths/<entry>-<exit>-{direct,full,always-direct}.txt
+node scripts/extract_rules_to_txt.mjs   # writes rules/paths/<entry>-<exit>.txt and -always-direct.txt
 node scripts/update_cidr_rules.mjs
 act workflow_dispatch -W .github/workflows/update-cidr-rules.yml --bind
 ```
 
-Four AmneziaWG / WireGuard configs per entry-exit (`wormhole-{entry}-{exit}-{mode}.conf`):
+Four AmneziaWG / WireGuard configs per entry-exit (`wormhole-{entry}-{exit}-{mode}.conf`). Catch (what can enter the tunnel) is independent of dest classification:
 
-- **auto** — split catch (`include`); remainder exits this node; hop set goes to the peer
-- **strict** — split catch (`include`); remainder goes to the peer (`always_direct` still exits this node if it arrives)
-- **direct** — `0.0.0.0/0`; same remainder policy as auto (phones that do not trust the ISP; GL.iNet ru-default tunnel)
-- **full** — `0.0.0.0/0`; same remainder policy as strict (foreign default; GL.iNet hop tunnel)
+- **auto** — split catch (`include`); unmatched default is this node; dest **direct then include**
+- **strict** — split catch (`include`); unmatched default is the peer; dest **include only** (no `direct.srs`)
+- **direct** — `0.0.0.0/0`; same dest and unmatched default as auto (phones; GL.iNet)
+- **full** — `0.0.0.0/0`; same dest and unmatched default as strict
 
-auto and direct share a VPN key and IP; strict and full share another. GL.iNet does not send DNS through the tunnel: load `{entry}-{exit}-direct.txt` on the direct tunnel, `{entry}-{exit}-full.txt` on the full tunnel, and `{entry}-{exit}-always-direct.txt` as ISP-only (not mixed into either tunnel catch). VLESS emits only `direct` and `full` URIs.
+auto and direct share a VPN key and IP; strict and full share another. GL.iNet catch is **not** AllowedIPs: use one **direct** tunnel (`0.0.0.0/0`, VPN DNS), load `{entry}-{exit}.txt` (include domains + CIDRs) as the VPN policy list, and `{entry}-{exit}-always-direct.txt` as ISP-only. VLESS emits only `direct` and `full` URIs.
 
 From a client (not a mesh node), probe a site against a profile:
 
@@ -180,8 +180,7 @@ rules/
     international/              # same tree as domain/; CIDR-only sets live here too
       social/
   paths/
-    {entry}-{exit}-direct.txt          # GL.iNet catch for the ru-default tunnel
-    {entry}-{exit}-full.txt            # GL.iNet catch for the hop-default tunnel
+    {entry}-{exit}.txt                 # GL.iNet VPN catch (include domains + CIDRs)
     {entry}-{exit}-always-direct.txt   # GL.iNet ISP-only (do not send through VPN)
 
 scripts/
@@ -189,7 +188,7 @@ scripts/
   assign_vpn_addresses.mjs      # deterministic AWG/WG subnets, client IPs, FakeIP slices
   pack_user_configs.mjs         # AES-256 zip per user config tree
   check_site.mjs                # client-vantage miniooni probe
-  extract_rules_to_txt.mjs      # flatten paths to GL.iNet -direct/-full/-always-direct.txt
+  extract_rules_to_txt.mjs      # flatten paths to GL.iNet include + always-direct txt
   update_cidr_rules.mjs         # fetch + compress CIDR JSON from sources.json
   discover_ssh_paths.mjs        # controller SSH path discovery (direct + jumps)
 
@@ -209,7 +208,7 @@ ansible/
   local/<name>/                 # Generated artifacts
     configs/{user}/{device}/    # Client configs and per-user AES-256 zips
     keys/                       # Server and client private keys
-    rulesets/{host}/            # Compiled include / hop / always_direct rule-sets
+    rulesets/{host}/            # Compiled profile / include / direct / always_direct rule-sets
   roles/wormhole/
     tasks/main.yml              # Installs Docker, TLS certs, deploys sing-box
     tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG and FakeIP

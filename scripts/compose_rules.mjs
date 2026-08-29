@@ -8,9 +8,16 @@
  *   node scripts/compose_rules.mjs --profile ru
  *   node scripts/compose_rules.mjs --profile ru --include ru --exclude international/social
  *   node scripts/compose_rules.mjs --profile ru --write-ruleset /tmp/profile.json
+ *   node scripts/compose_rules.mjs --profile ru --write-include-ruleset /tmp/include.json --write-direct-ruleset /tmp/direct.json
  *   node scripts/compose_rules.mjs --self-check
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -234,13 +241,27 @@ export function profileRuleSet(composed) {
 }
 
 export function destRuleSet(suffixes = [], cidrs = []) {
-  const rule = {}
-  if (suffixes.length) rule.domain_suffix = suffixes
-  if (cidrs.length) rule.ip_cidr = cidrs
+  const rules = []
+  if (suffixes.length) rules.push({ domain_suffix: suffixes })
+  if (cidrs.length) rules.push({ ip_cidr: cidrs })
   return {
     version: 4,
-    rules: Object.keys(rule).length ? [rule] : [],
+    rules,
   }
+}
+
+export function includeRuleSet(composed) {
+  return destRuleSet(
+    composed.domain_suffixes || [],
+    composed.advertise_cidrs || [],
+  )
+}
+
+export function directRuleSet(composed) {
+  return destRuleSet(
+    composed.direct_domain_suffixes || [],
+    composed.direct_cidrs || [],
+  )
 }
 
 export function hopRuleSet(composed) {
@@ -272,7 +293,9 @@ export function selfCheck(rulesDir = defaultRulesDir) {
   }
   assert(
     JSON.stringify(ru.hop_names) ===
-      JSON.stringify(ru.names.filter((name) => !ru.direct_names.includes(name))),
+      JSON.stringify(
+        ru.names.filter((name) => !ru.direct_names.includes(name)),
+      ),
     'ru hop is include minus direct',
   )
   assert(ru.always_direct_names.length > 0, 'ru profile has always_direct sets')
@@ -323,6 +346,34 @@ export function selfCheck(rulesDir = defaultRulesDir) {
     'always_direct ruleset has domains',
   )
 
+  const mixed = destRuleSet(['example.com'], ['1.1.1.0/24'])
+  assert(mixed.rules.length === 2, 'dest ruleset ORs domain and cidr')
+  assert(
+    mixed.rules[0].domain_suffix && !mixed.rules[0].ip_cidr,
+    'first dest rule is domain-only',
+  )
+  assert(
+    mixed.rules[1].ip_cidr && !mixed.rules[1].domain_suffix,
+    'second dest rule is cidr-only',
+  )
+  const includeJson = includeRuleSet(ru)
+  assert(
+    includeJson.rules.length === 2,
+    'ru include dest has domains and cidrs',
+  )
+  const directJson = directRuleSet(ru)
+  assert(directJson.rules.length === 2, 'ru direct dest has domains and cidrs')
+  assert(
+    (directJson.rules.find((rule) => rule.ip_cidr) || {}).ip_cidr?.length > 0,
+    'ru direct dest has CIDRs',
+  )
+  const nonRuInclude = includeRuleSet(nonRu)
+  assert(
+    (nonRuInclude.rules[0]?.domain_suffix || []).length > 0,
+    'non-ru include dest has domains',
+  )
+  assert(directRuleSet(nonRu).rules.length === 0, 'non-ru direct dest is empty')
+
   const emptyHop = destRuleSet([], [])
   assert(emptyHop.rules.length === 0, 'empty dest ruleset has no rules')
 
@@ -349,7 +400,8 @@ function parseArgs(argv) {
     direct: [],
     always_direct: [],
     writeRuleset: null,
-    writeHopRuleset: null,
+    writeIncludeRuleset: null,
+    writeDirectRuleset: null,
     writeAlwaysDirectRuleset: null,
   }
   for (let i = 0; i < argv.length; i++) {
@@ -367,11 +419,20 @@ function parseArgs(argv) {
       continue
     }
     if (
-      arg === '--write-hop-ruleset' ||
-      arg.startsWith('--write-hop-ruleset=')
+      arg === '--write-include-ruleset' ||
+      arg.startsWith('--write-include-ruleset=')
     ) {
-      const taken = takeArg(arg, '--write-hop-ruleset', argv, i)
-      opts.writeHopRuleset = taken.value
+      const taken = takeArg(arg, '--write-include-ruleset', argv, i)
+      opts.writeIncludeRuleset = taken.value
+      i = taken.i
+      continue
+    }
+    if (
+      arg === '--write-direct-ruleset' ||
+      arg.startsWith('--write-direct-ruleset=')
+    ) {
+      const taken = takeArg(arg, '--write-direct-ruleset', argv, i)
+      opts.writeDirectRuleset = taken.value
       i = taken.i
       continue
     }
@@ -428,7 +489,7 @@ function isCli() {
 }
 
 const USAGE =
-  'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path] [--direct path] [--always-direct path] [--write-ruleset path] [--write-hop-ruleset path] [--write-always-direct-ruleset path]\n' +
+  'Usage: node scripts/compose_rules.mjs --profile <ru|non-ru> [--include path] [--exclude path] [--direct path] [--always-direct path] [--write-ruleset path] [--write-include-ruleset path] [--write-direct-ruleset path] [--write-always-direct-ruleset path]\n' +
   '       node scripts/compose_rules.mjs --self-check\n'
 
 if (isCli()) {
@@ -456,10 +517,16 @@ if (isCli()) {
         `${JSON.stringify(profileRuleSet(composed), null, 2)}\n`,
       )
     }
-    if (opts.writeHopRuleset) {
+    if (opts.writeIncludeRuleset) {
       writeFileSync(
-        opts.writeHopRuleset,
-        `${JSON.stringify(hopRuleSet(composed), null, 2)}\n`,
+        opts.writeIncludeRuleset,
+        `${JSON.stringify(includeRuleSet(composed), null, 2)}\n`,
+      )
+    }
+    if (opts.writeDirectRuleset) {
+      writeFileSync(
+        opts.writeDirectRuleset,
+        `${JSON.stringify(directRuleSet(composed), null, 2)}\n`,
       )
     }
     if (opts.writeAlwaysDirectRuleset) {

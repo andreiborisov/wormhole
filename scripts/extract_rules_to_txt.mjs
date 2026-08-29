@@ -3,20 +3,27 @@
  * Flatten composed path rulesets to text for GL.iNet-style consumers.
  *
  * Paths match client configs: {entry}-{exit} from the inventory host/peer
- * matrix. Each path writes three files from the entry node's profile (plus host
+ * matrix. Each path writes two files from the entry node's profile (plus host
  * include/exclude/direct/always_direct):
  *
- *   {entry}-{exit}-direct.txt         — direct domains, then direct CIDRs
- *   {entry}-{exit}-full.txt           — hop domains, exit dns.local_domains, hop CIDRs
- *   {entry}-{exit}-always-direct.txt  — always_direct domains, then always_direct CIDRs
+ *   {entry}-{exit}.txt                — include domains, exit dns.local_domains,
+ *                                       then include CIDRs
+ *   {entry}-{exit}-always-direct.txt  — always_direct domains, then CIDRs
  *
- * always_direct is not mixed into direct or full; the router uses that file to
- * keep those dests on the ISP.
+ * Hop vs local-exit is sing-box dest policy, not these files. always_direct
+ * is ISP-only on the router and is not mixed into the include catch.
  *
  *   node scripts/extract_rules_to_txt.mjs
  *   node scripts/extract_rules_to_txt.mjs --inventory development
+ *   node scripts/extract_rules_to_txt.mjs --self-check
  */
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from 'yaml'
@@ -36,7 +43,9 @@ function asStringList(value) {
 }
 
 function txtBody(lines) {
-  const uniqueLines = unique(lines.filter((item) => typeof item === 'string' && item))
+  const uniqueLines = unique(
+    lines.filter((item) => typeof item === 'string' && item),
+  )
   return uniqueLines.length ? `${uniqueLines.join('\n')}\n` : ''
 }
 
@@ -95,6 +104,15 @@ export function inventoryPaths(inventoryFile) {
   return paths
 }
 
+export function stalePathTxts(pathInfo, outDir) {
+  return [
+    join(outDir, `${pathInfo.name}-direct.txt`),
+    join(outDir, `${pathInfo.name}-full.txt`),
+    join(outDir, `${pathInfo.name}-adguard.txt`),
+    join(outDir, `${pathInfo.name}-always_direct.txt`),
+  ]
+}
+
 export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
   const composed = composeRules({
     profile: pathInfo.profile,
@@ -105,14 +123,10 @@ export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
     rulesDir,
   })
   const outDir = join(rulesDir, 'paths')
-  const directLines = [
-    ...composed.direct_domain_suffixes,
-    ...composed.direct_cidrs,
-  ]
-  const fullLines = [
-    ...composed.hop_domain_suffixes,
+  const includeLines = [
+    ...composed.domain_suffixes,
     ...pathInfo.localDomains,
-    ...composed.hop_cidrs,
+    ...composed.advertise_cidrs,
   ]
   const alwaysDirectLines = [
     ...composed.always_direct_domain_suffixes,
@@ -120,16 +134,10 @@ export function pathTxts(pathInfo, rulesDir = defaultRulesDir) {
   ]
   return [
     {
-      kind: 'direct',
-      path: join(outDir, `${pathInfo.name}-direct.txt`),
-      count: unique(directLines.filter(Boolean)).length,
-      text: txtBody(directLines),
-    },
-    {
-      kind: 'full',
-      path: join(outDir, `${pathInfo.name}-full.txt`),
-      count: unique(fullLines.filter(Boolean)).length,
-      text: txtBody(fullLines),
+      kind: 'include',
+      path: join(outDir, `${pathInfo.name}.txt`),
+      count: unique(includeLines.filter(Boolean)).length,
+      text: txtBody(includeLines),
     },
     {
       kind: 'always_direct',
@@ -156,11 +164,7 @@ export function writePathTxts({
 
   const results = []
   for (const pathInfo of paths) {
-    const stale = [
-      join(outDir, `${pathInfo.name}.txt`),
-      join(outDir, `${pathInfo.name}-always_direct.txt`),
-    ]
-    for (const path of stale) {
+    for (const path of stalePathTxts(pathInfo, outDir)) {
       if (existsSync(path)) unlinkSync(path)
     }
     for (const result of pathTxts(pathInfo, rulesDir)) {
@@ -170,6 +174,78 @@ export function writePathTxts({
   }
 
   return results
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(`self-check failed: ${message}`)
+}
+
+export function selfCheck(rulesDir = defaultRulesDir) {
+  const ruTxts = pathTxts(
+    {
+      name: 'ru-eu',
+      profile: 'ru',
+      include: [],
+      exclude: [],
+      direct: [],
+      always_direct: [],
+      localDomains: ['retn.net'],
+    },
+    rulesDir,
+  )
+  assert(ruTxts.length === 2, 'ru path writes two files')
+  assert(ruTxts[0].kind === 'include', 'first file is include catch')
+  assert(ruTxts[1].kind === 'always_direct', 'second file is always-direct')
+  assert(
+    ruTxts[0].path.endsWith('ru-eu.txt'),
+    'include file has no mode suffix',
+  )
+  assert(
+    ruTxts[1].path.endsWith('ru-eu-always-direct.txt'),
+    'always-direct file name',
+  )
+  assert(ruTxts[0].count > 0, 'ru include catch is non-empty')
+  assert(ruTxts[1].count > 0, 'ru always-direct is non-empty')
+  assert(
+    ruTxts[0].text.includes('retn.net\n'),
+    'include catch has exit local_domains',
+  )
+  assert(
+    ruTxts[0].text.includes('youtube.com\n') ||
+      ruTxts[0].text.includes('github.com\n'),
+    'ru include catch has include domains',
+  )
+  assert(
+    ruTxts[1].text.includes('gosuslugi.ru\n'),
+    'always-direct has ru services',
+  )
+
+  const nonRuTxts = pathTxts(
+    {
+      name: 'eu-ru',
+      profile: 'non-ru',
+      include: [],
+      exclude: [],
+      direct: [],
+      always_direct: [],
+      localDomains: [],
+    },
+    rulesDir,
+  )
+  assert(nonRuTxts[0].count > 0, 'non-ru include catch is ru domains')
+  assert(nonRuTxts[1].count === 0, 'non-ru always-direct is empty')
+  assert(nonRuTxts[1].text === '', 'empty always-direct file has no body')
+
+  const outDir = join(rulesDir, 'paths')
+  const stale = stalePathTxts({ name: 'ru-eu' }, outDir)
+  assert(
+    stale.some((path) => path.endsWith('ru-eu-direct.txt')),
+    'stale list includes -direct',
+  )
+  assert(
+    stale.some((path) => path.endsWith('ru-eu-full.txt')),
+    'stale list includes -full',
+  )
 }
 
 function parseArgs(argv) {
@@ -182,13 +258,17 @@ function parseArgs(argv) {
         : argv[++i]
       continue
     }
+    if (arg === '--self-check') {
+      opts.selfCheck = true
+      continue
+    }
     if (arg === '-h' || arg === '--help') {
       opts.help = true
       continue
     }
     throw new Error(`unknown argument: ${arg}`)
   }
-  if (!opts.inventory) {
+  if (!opts.selfCheck && !opts.inventory) {
     throw new Error('inventory is required')
   }
   return opts
@@ -205,8 +285,14 @@ if (isCli()) {
     const opts = parseArgs(process.argv.slice(2))
     if (opts.help) {
       process.stdout.write(
-        'Usage: node scripts/extract_rules_to_txt.mjs [--inventory <name|path>]\n',
+        'Usage: node scripts/extract_rules_to_txt.mjs [--inventory <name|path>]\n' +
+          '       node scripts/extract_rules_to_txt.mjs --self-check\n',
       )
+      process.exit(0)
+    }
+    if (opts.selfCheck) {
+      selfCheck()
+      process.stdout.write('ok\n')
       process.exit(0)
     }
     const results = writePathTxts({ inventory: opts.inventory })
