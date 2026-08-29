@@ -77,7 +77,7 @@ Named sets are paths under `rules/domain/` and `rules/cidr/` (no `.json`). The s
 
 - `include` / `exclude` — capture catalog (FakeIP DNS + split `AllowedIPs` + GL.iNet `{entry}-{exit}.txt`)
 - `direct` — subset of `include`; local-exit dest match on auto/direct client modes only
-- `always_direct` — disjoint from `include`. Split clients never catch it. GL.iNet `{entry}-{exit}-always-direct.txt` keeps those dests on the ISP. A `0.0.0.0/0` client that still delivers the packet follows unmatched default (local on auto/direct, peer on strict/full).
+- `always_direct` — disjoint from `include`. Split clients never catch it (ISP). GL.iNet `{entry}-{exit}-always-direct.txt` keeps those dests on the ISP. DNS uses real IPs (never FakeIP). **direct** `0.0.0.0/0` unmatched stays this node. **full** (hop-policy) sniffs real-IP TLS/HTTP/QUIC and dest-matches `always_direct.srs` to this node; other unmatched still goes to the peer.
 
 Hop is `include` minus `direct`. A host can add or drop paths:
 
@@ -92,7 +92,7 @@ rules:
 
 Missing `rules.profile` fails the playbook.
 
-**Domains** in `include` are a sing-box rule-set compiled on the Ansible controller (`profile.srs`). They FakeIP-hijack DNS. Include dest (`include.srs`: domains **or** CIDRs) hairpins to the peer. Direct dest (`direct.srs`) local-exits, but only for auto/direct clients — and **before** include, because `direct ⊂ include`. `always_direct` is DNS-only (real IPs, never FakeIP). Edit a file under `rules/domain/ru/` or `rules/domain/international/`, then re-run the playbook.
+**Domains** in `include` are a sing-box rule-set compiled on the Ansible controller (`profile.srs`). They FakeIP-hijack DNS. Include dest (`include.srs`: domains **or** CIDRs) hairpins to the peer. Direct dest (`direct.srs`) local-exits, but only for auto/direct clients — and **before** include, because `direct ⊂ include`. `always_direct` stays real-IP DNS; hop-policy sources sniff non-FakeIP dests and local-exit `always_direct.srs` (auto/direct are not sniffed). Edit a file under `rules/domain/ru/` or `rules/domain/international/`, then re-run the playbook.
 
 **CIDRs** in `include` are composed at deploy time into Tailscale `advertise_routes`, split-mode WireGuard / AmneziaWG `AllowedIPs`, and dest rule-sets (orthogonal to FakeIP/domain matches). Edit a file under `rules/cidr/` (same relative path as the matching domain set when both exist), then re-run the playbook. A GitHub refresh of JSON does not update advertised routes.
 
@@ -109,9 +109,9 @@ act workflow_dispatch -W .github/workflows/update-cidr-rules.yml --bind
 Four AmneziaWG / WireGuard configs per entry-exit (`wormhole-{entry}-{exit}-{mode}.conf`). Catch (what can enter the tunnel) is independent of dest classification:
 
 - **auto** — split catch (`include`); unmatched default is this node; dest **direct then include**
-- **strict** — split catch (`include`); unmatched default is the peer; dest **include only** (no `direct.srs`)
+- **strict** — split catch (`include`); unmatched default is the peer; dest **include only** (no `direct.srs`). `always_direct` stays on the ISP
 - **direct** — `0.0.0.0/0`; same dest and unmatched default as auto (phones; GL.iNet)
-- **full** — `0.0.0.0/0`; same dest and unmatched default as strict
+- **full** — `0.0.0.0/0`; dest **include** then unmatched peer, except sniffed `always_direct.srs` local-exits this node
 
 auto and direct share a VPN key and IP; strict and full share another. GL.iNet catch is **not** AllowedIPs: use one **direct** tunnel (`0.0.0.0/0`, VPN DNS), load `{entry}-{exit}.txt` (include domains + CIDRs) as the VPN policy list, and `{entry}-{exit}-always-direct.txt` as ISP-only. VLESS emits only `direct` and `full` URIs.
 

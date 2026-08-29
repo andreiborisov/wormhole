@@ -17,6 +17,21 @@
 {%- set _has_wg_endpoints = wg_private_key is defined and (_wg_clients | length) > 0 -%}
 {%- set _vless_clients = vless_clients_with_credentials if vless_clients_with_credentials is defined else [] -%}
 {%- set _vpn_inbounds = ['awg-in'] + (['wg-ep'] if _has_wg_endpoints else []) -%}
+{%- set _all_full_cidrs = [] -%}
+{%- set _all_full_vless = [] -%}
+{%- for p in deterministic_peers -%}
+  {%- for ip in (_peer_policy[p] | default({}))['full'] | default([]) -%}
+    {%- set _ = _all_full_cidrs.append(ip) -%}
+  {%- endfor -%}
+  {%- for user in (_peer_vless[p] | default({}))['full'] | default([]) -%}
+    {%- set _ = _all_full_vless.append(user) -%}
+  {%- endfor -%}
+{%- endfor -%}
+{%- set _all_full_cidrs = _all_full_cidrs | unique | list -%}
+{%- set _all_full_vless = _all_full_vless | unique | list -%}
+{%- set _fakeip_cidrs = [fakeip_inet4_range, fakeip_inet6_range] -%}
+{%- set _sniff_always_direct_vpn = _has_always_direct and (_all_full_cidrs | length > 0) -%}
+{%- set _sniff_always_direct_vless = _has_always_direct and (_all_full_vless | length > 0) -%}
 {%- set _wg_addrs = [] -%}
 {%- for p in deterministic_peers -%}
   {%- set _cidr = hostvars[p]['wg']['subnet'] | default(wg.subnet) -%}
@@ -263,7 +278,53 @@
         "inbound": {{ _vpn_inbounds | to_json }},
         "port": [53],
         "action": "hijack-dns"
-      }{% for peer in deterministic_peers %}
+      }{% if _sniff_always_direct_vpn %},
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": {{ _vpn_inbounds | to_json }},
+            "source_ip_cidr": {{ _all_full_cidrs | to_json }}
+          },
+          {
+            "ip_cidr": {{ _fakeip_cidrs | to_json }},
+            "invert": true
+          }
+        ],
+        "action": "sniff",
+        "timeout": "300ms",
+        "sniffer": ["http", "tls", "quic"]
+      },
+      {
+        "inbound": {{ _vpn_inbounds | to_json }},
+        "source_ip_cidr": {{ _all_full_cidrs | to_json }},
+        "rule_set": ["always_direct"],
+        "action": "route",
+        "outbound": "direct"
+      }{% endif %}{% if _sniff_always_direct_vless %},
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "auth_user": {{ _all_full_vless | to_json }}
+          },
+          {
+            "ip_cidr": {{ _fakeip_cidrs | to_json }},
+            "invert": true
+          }
+        ],
+        "action": "sniff",
+        "timeout": "300ms",
+        "sniffer": ["http", "tls", "quic"]
+      },
+      {
+        "auth_user": {{ _all_full_vless | to_json }},
+        "rule_set": ["always_direct"],
+        "action": "route",
+        "outbound": "direct"
+      }{% endif %}{% for peer in deterministic_peers %}
 {%- set _pol = _peer_policy[peer] | default({}) -%}
 {%- set _vless_pol = _peer_vless[peer] | default({}) -%}
 {%- set _direct_cidrs = _pol['direct'] | default([]) -%}
