@@ -3,7 +3,10 @@ pornhub.com
 anthropic.com
 chatgpt.com
 claude.ai
+api.cloudflare.com
+ai.cloudflare.com
 grammarly.com
+groq.com
 openai.com
 reverso.net
 opendesign.com
