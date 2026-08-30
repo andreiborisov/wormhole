@@ -80,6 +80,12 @@ discordapp.net
 discordcdn.com
 cdninstagram.com
 instagram.com
+licdn.com
+linkedin.com
+lnkd.in
+pinterest.com
+pinimg.com
+pin.it
 t.me
 telegram.org
 wa.me
