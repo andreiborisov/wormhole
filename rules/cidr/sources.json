@@ -7,13 +7,13 @@
       "paths": ["result.ipv4_cidrs", "result.ipv6_cidrs"]
     },
     {
-      "path": "international/infrastructure/cloudfront",
+      "path": "international/infrastructure/amazon/cloudfront",
       "source": "aws-ip-ranges",
       "url": "https://ip-ranges.amazonaws.com/ip-ranges.json",
       "service": "CLOUDFRONT"
     },
     {
-      "path": "international/infrastructure/aws",
+      "path": "international/infrastructure/amazon/aws",
       "source": "aws-ip-ranges",
       "url": "https://ip-ranges.amazonaws.com/ip-ranges.json",
       "service": "GLOBALACCELERATOR"
@@ -25,13 +25,13 @@
       "paths": ["addresses", "ipv6_addresses"]
     },
     {
-      "path": "international/github/api",
+      "path": "international/developer/github/api",
       "source": "json-paths",
       "url": "https://api.github.com/meta",
       "paths": ["git"]
     },
     {
-      "path": "international/github/pages",
+      "path": "international/developer/github/pages",
       "source": "json-paths",
       "url": "https://api.github.com/meta",
       "paths": ["pages"]
