@@ -2,7 +2,7 @@
   "version": 4,
   "rules": [
     {
-      "domain_suffix": ["cursor.sh"]
+      "domain_suffix": ["cursor.com", "cursor.sh"]
     }
   ]
 }
