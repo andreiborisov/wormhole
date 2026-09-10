@@ -13,6 +13,9 @@ opendesign.com
 openifcviewer.com
 cursor.com
 cursor.sh
+cursor-cdn.com
+cursorapi.com
+cursorvm.com
 api.github.com
 cafe.github.com
 codeload.github.com
