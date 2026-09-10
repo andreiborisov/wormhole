@@ -7,7 +7,7 @@
 - [x] Split configuration files into categories
 - [x] Allow to point to specific rulesets for each node (or perhaps a folder)
 - [] Generate .txt rules for GL.iNet routers (GitHub Actions) and host them on something that is available everywhere (like disk.yandex.ru)
-- [] Make sure everything is configurable and usable with multiple peers (generate multiple awg/wireguard configs to choose outbound wormhole used)
+- [x] Make sure everything is configurable and usable with multiple peers (generate multiple awg/wireguard configs to choose outbound wormhole used)
 - [] Cloud deployments (GitHub Actions)
 - [] Publish configuration files for clients to download (should be available everywhere, something like disk.yandex.ru)
 - [] Comprehensive monitoring solution
