@@ -2,7 +2,7 @@
   "version": 4,
   "rules": [
     {
-      "domain_suffix": ["chatgpt.com", "openai.com"]
+      "domain_suffix": ["chatgpt.com", "oaiusercontent.com", "openai.com"]
     }
   ]
 }

@@ -8,7 +8,9 @@ api.cloudflare.com
 ai.cloudflare.com
 groq.com
 chatgpt.com
+oaiusercontent.com
 openai.com
+openrouter.ai
 opendesign.com
 openifcviewer.com
 cursor.com
