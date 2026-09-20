@@ -4,7 +4,6 @@
   "direct": [
     "international/developer/github",
     "international/infrastructure",
-    "international/social/discord",
     "international/social/linkedin",
     "international/social/zoom"
   ],
