@@ -32,6 +32,7 @@ githubusercontent.com
 github.io
 linear.app
 planetscale.com
+tmdb.org
 scdn.co
 spotify.com
 spotifycdn.com
