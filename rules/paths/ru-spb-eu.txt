@@ -66,6 +66,7 @@ folivora.ai
 diabrowser.com
 diabrowser.engineering
 grammarly.com
+notion.com
 notion.so
 notion-static.com
 raycast.com
