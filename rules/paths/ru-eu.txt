@@ -55,11 +55,12 @@ meduza.io
 zona.media
 parcel.app
 parcelapp.net
+ext.to
 flibusta.is
 appkp.cc
 kino.pub
 kino.watch
-opentrackr.org
+rutor.info
 rutor.is
 rutracker.cc
 rutracker.org
