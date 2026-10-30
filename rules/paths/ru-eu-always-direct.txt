@@ -1,3 +1,4 @@
+arca.am
 kinopoisk.ru
 sberbank.ru
 tbank.ru

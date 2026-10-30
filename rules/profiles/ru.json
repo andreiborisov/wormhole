@@ -7,5 +7,5 @@
     "international/social/linkedin",
     "international/social/zoom"
   ],
-  "always_direct": ["ru"]
+  "always_direct": ["am", "ru"]
 }
