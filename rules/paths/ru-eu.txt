@@ -84,6 +84,7 @@ ebay.com
 ebaydesc.com
 ebayimg.com
 etsy.com
+g2a.com
 ikea.com
 kickstarter.com
 nike.com
