@@ -98,6 +98,8 @@ Missing `rules.profile` fails the playbook.
 
 Upstream CIDR lists are defined in `rules/cidr/sources.json`. Refresh the compressed JSON locally, or via the daily GitHub Action. GL.iNet `.txt` maps are local-only (`extract_rules_to_txt.mjs`). These endpoints are public; do not commit `.env` or secrets. The Node script is the source of truth; `act` checks the workflow wrapper. `--bind` keeps generated JSON on the host. Apple Silicon may need `--container-architecture linux/arm64`. Fetch needs network (`act`'s default Docker network is enough).
 
+A set takes one `source` or merges a `sources` array. `json-ips` collects every address in a JSON document. `"widen": "rdap"` replaces each fetched address with the network it is registered under (RDAP via ARIN, which redirects to the other registries), so a feed of a few rotating addresses still yields a stable block; it refuses networks larger than IPv4 `/12` or IPv6 `/29`. Discord's voice and video servers come from its own ping list (`latency.discord.media/rtc`) this way. The widened block is Cloudflare's registered network, which also holds the CDN ranges in `international/infrastructure/cloudflare`. The overlap is intended: auto/direct clients match `direct` before `include`, so CDN traffic still exits locally and only the rest goes to the peer.
+
 ```fish
 node scripts/compose_rules.mjs --profile ru
 node scripts/compose_rules.mjs --self-check

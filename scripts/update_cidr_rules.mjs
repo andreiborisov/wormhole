@@ -4,6 +4,10 @@
  * source JSON under rules/cidr/. Path .txt files are local-only
  * (`node scripts/extract_rules_to_txt.mjs`).
  *
+ * A set reads one source or merges a `sources` array. `"widen": "rdap"`
+ * replaces each fetched address with the network it is registered under, so a
+ * feed of a few rotating addresses still yields a stable block.
+ *
  *   node scripts/update_cidr_rules.mjs
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -14,6 +18,10 @@ import { defaultRulesDir } from './compose_rules.mjs'
 
 const userAgent = 'wormhole-cidr-update'
 const sourcesPath = join(defaultRulesDir, 'cidr', 'sources.json')
+// ARIN redirects RDAP queries for other registries' space to them.
+const rdapUrl = 'https://rdap.arin.net/registry/ip/'
+// Largest registered network `widen: "rdap"` may expand an address to.
+const rdapMaxPrefix = { 4: 12, 6: 29 }
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
@@ -403,6 +411,9 @@ async function extractSet(entry) {
     const payload = JSON.parse(await fetchBody(entry.url))
     return extractJsonPaths(payload, entry.paths)
   }
+  if (source === 'json-ips') {
+    return collectCidrStrings(JSON.parse(await fetchBody(entry.url)))
+  }
   if (source === 'aws-ip-ranges') {
     const payload = JSON.parse(await fetchBody(entry.url))
     return extractAwsIpRanges(payload, entry.service)
@@ -444,6 +455,49 @@ async function extractSet(entry) {
   throw new Error(`unknown source type: ${source}`)
 }
 
+/**
+ * Expand each CIDR to the network it is registered under (RDAP), one lookup
+ * per network. Refuses networks larger than `rdapMaxPrefix`.
+ */
+export async function widenRdap(cidrs, label = 'widen') {
+  const nets = []
+  for (const cidr of cidrs) {
+    const seed = cidrToRange(cidr)
+    if (!seed) continue
+    const covered = nets.some(
+      (net) =>
+        net.version === seed.version &&
+        seed.start >= net.start &&
+        seed.end <= net.end,
+    )
+    if (covered) continue
+    const address = cidr.split('/')[0]
+    const rdap = JSON.parse(
+      await fetchBody(`${rdapUrl}${address}`, {
+        Accept: 'application/rdap+json, application/json',
+      }),
+    )
+    if (!rdap.startAddress || !rdap.endAddress) {
+      throw new Error(`${label}: RDAP has no range for ${address}`)
+    }
+    const start = ipToBigInt(rdap.startAddress, seed.version)
+    const end = ipToBigInt(rdap.endAddress, seed.version)
+    const maxPrefix = rdapMaxPrefix[seed.version]
+    if (end - start + 1n > 1n << BigInt(seed.bits - maxPrefix)) {
+      throw new Error(
+        `${label}: ${address} is registered as ${rdap.startAddress} - ${rdap.endAddress} (${rdap.handle}), larger than /${maxPrefix}`,
+      )
+    }
+    nets.push({ ...seed, start, end })
+    const block = rangeToCidrs(start, end, seed.bits).join(' ')
+    process.stdout.write(`  widen ${address} → ${block} (${rdap.handle})\n`)
+  }
+  return [
+    ...cidrs,
+    ...nets.flatMap((net) => rangeToCidrs(net.start, net.end, net.bits)),
+  ]
+}
+
 function existingCount(path) {
   if (!existsSync(path)) return 0
   try {
@@ -468,11 +522,20 @@ export async function updateCidrRules({
   const summaries = []
   for (const entry of sets) {
     if (!entry.path) throw new Error('set is missing path')
-    const extracted = await extractSet(entry)
-    const merged = mergeCidrs(extracted)
-    if (!merged.length) {
-      throw new Error(`${entry.path}: upstream returned 0 prefixes`)
+    const extracted = []
+    for (const source of entry.sources ? asArray(entry.sources) : [entry]) {
+      let cidrs = await extractSet(source)
+      if (!cidrs.length) {
+        throw new Error(`${entry.path}: ${source.url} returned 0 prefixes`)
+      }
+      if (source.widen === 'rdap') {
+        cidrs = await widenRdap(cidrs, entry.path)
+      } else if (source.widen) {
+        throw new Error(`${entry.path}: unknown widen: ${source.widen}`)
+      }
+      extracted.push(...cidrs)
     }
+    const merged = mergeCidrs(extracted)
     const outPath = join(rulesDir, 'cidr', `${entry.path}.json`)
     const before = existingCount(outPath)
     mkdirSync(dirname(outPath), { recursive: true })

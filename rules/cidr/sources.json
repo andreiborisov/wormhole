@@ -58,8 +58,17 @@
     },
     {
       "path": "international/social/discord",
-      "source": "ripe-org",
-      "url": "https://rest.db.ripe.net/search.json?inverse-attribute=org&type-filter=inetnum&type-filter=inet6num&query-string=ORG-DI90-RIPE"
+      "sources": [
+        {
+          "source": "ripe-org",
+          "url": "https://rest.db.ripe.net/search.json?inverse-attribute=org&type-filter=inetnum&type-filter=inet6num&query-string=ORG-DI90-RIPE"
+        },
+        {
+          "source": "json-ips",
+          "url": "https://latency.discord.media/rtc",
+          "widen": "rdap"
+        }
+      ]
     }
   ]
 }
