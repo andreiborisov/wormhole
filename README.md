@@ -166,6 +166,16 @@ ansible-playbook -i inventories/production site.yml
 
 Pin a new version in `ansible/roles/wormhole/files/docker-compose.yml` and re-run the playbook.
 
+### Throughput tuning
+
+On a single-vCPU node, the userspace data path (amneziawg-go, the sing-box TUN, QUIC) is the ceiling. Set these per host in `hosts.local.yml`, or for every host in `group_vars`:
+
+- `hysteria2.down_mbps` (default `0`, BBR) — the rate this node asks its Hysteria2 peers to send at. A non-zero value makes the peer use Brutal at that fixed rate and raises `net.core.rmem_default` to 2 MiB. With BBR, a receiver that fell behind lost 70–80% of the QUIC and the peer re-sent up to 4.6× the goodput. Brutal never backs off either, so set it per host to what this node can process under real load, not to the raw link speed. Measure with demand above the rate while AWG clients are active, e.g. a temporary SOCKS inbound on the node's sing-box pulling a fast server with several streams alongside a client download. Find the highest rate whose peer sends ≤ ~1.1× the goodput, then leave headroom below it. On single-vCPU dev nodes that ceiling was 600 both ways, while the link carried over 1.5 Gbit/s: 800 added only overhead, and 2000 collapsed throughput to 238 Mbit/s. They run 500. Upload keeps BBR.
+- `awg_tcp_redirect.enabled` (default `true`) — hands AWG client TCP to a sing-box `redirect` inbound through nftables REDIRECT. It then terminates in the kernel with TSO/GRO instead of crossing the TUN packet by packet, using ~20% less CPU per bit on a single-vCPU node. UDP and DNS stay on the TUN. Set it to `false` on a host to keep TCP on the TUN too.
+- `kernel_cmdline_extra` (default `[spec_rstack_overflow=off, spectre_v2=off]`) — kernel boot parameters, written to `/etc/default/grub.d` on every node. Some hosts hide the CPU features cheap mitigations need (`/sys/devices/system/cpu/vulnerabilities/spec_rstack_overflow` reports `Safe RET, no microcode`). On a single-vCPU node that fallback costs ~22% more CPU per bit and much of the upload speed. The nodes run only Wormhole's own containers, so the default trades in-guest isolation for faster kernel networking. Set `[]` on a host to keep the distribution defaults. Hosts without `update-grub` are skipped with a warning. After provisioning, the playbook reboots each node whose running kernel lacks the parameters. It goes one node at a time, nodes reached through an SSH jump before the jump hosts themselves, and waits for each node's tunnel routes before moving on. Any failure stops the remaining reboots. Set `kernel_cmdline_reboot: false` to only print a reminder.
+
+Every node also sets `net.core.rmem_default` to 2 MiB. sing-box's Hysteria2 outbound never sizes its socket, and the kernel's 208 KB overflowed on ordinary bursts.
+
 ## 🗂️ Structure
 
 ```
@@ -216,5 +226,6 @@ ansible/
     tasks/assign-vpn-subnets.yml # Localhost Node allocator for AWG/WG and FakeIP
     tasks/expand-vpn-users.yml  # user_devices × users → vpn_clients
     tasks/compose-rules.yml     # Localhost Node compose for this host
+    tasks/reboot.yml            # Serial reboot when kernel parameters are pending
     templates/sing-box/         # Jinja2 config template
 ```
