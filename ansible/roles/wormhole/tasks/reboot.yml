@@ -1,0 +1,50 @@
+---
+# Reboot this node when its running kernel lacks kernel_cmdline_extra.
+# site.yml includes this one node at a time (serial: 1), leaves before SSH
+# jump hosts, so no node goes down while the controller reaches another node
+# through it. Any failure stops the remaining reboots.
+
+- name: Reboot to apply kernel parameters
+  ansible.builtin.reboot:
+    msg: Rebooting to apply kernel parameters (wormhole role)
+    reboot_timeout: 900
+  register: wormhole_kernel_reboot
+  when:
+    - kernel_cmdline_reboot | bool
+    - wormhole_kernel_cmdline_missing | default([]) | length > 0
+
+- name: Read the kernel command line after the reboot
+  ansible.builtin.slurp:
+    src: /proc/cmdline
+  register: wormhole_proc_cmdline_after
+  when: wormhole_kernel_reboot is changed
+
+- name: Fail when the reboot did not apply the kernel parameters
+  ansible.builtin.assert:
+    that:
+      - wormhole_kernel_cmdline_missing | reject('in', (wormhole_proc_cmdline_after.content | b64decode).split()) | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} rebooted but its kernel still lacks:
+      {{ wormhole_kernel_cmdline_missing | reject('in', (wormhole_proc_cmdline_after.content | b64decode).split()) | join(' ') }}
+    quiet: true
+  when: wormhole_kernel_reboot is changed
+
+# The router container restores the policy route once sing-box's TUN is up.
+- name: Wait for the tunnel routes after the reboot
+  ansible.builtin.command: ip -4 route show table 100
+  register: wormhole_table100
+  until: "'default dev sb-awg-in' in wormhole_table100.stdout"
+  retries: 60
+  delay: 2
+  changed_when: false
+  failed_when: "'default dev sb-awg-in' not in wormhole_table100.stdout"
+  when: wormhole_kernel_reboot is changed
+
+- name: Warn when kernel boot parameters wait for a reboot
+  ansible.builtin.debug:
+    msg: >-
+      Reboot {{ inventory_hostname }} to apply kernel parameters:
+      {{ wormhole_kernel_cmdline_missing | join(' ') }}
+  when:
+    - not (kernel_cmdline_reboot | bool)
+    - wormhole_kernel_cmdline_missing | default([]) | length > 0

@@ -5,6 +5,20 @@ configs_dir: '{{ local_dir }}/configs'
 keys_dir: '{{ local_dir }}/keys'
 rulesets_dir: '{{ local_dir }}/rulesets'
 tcp_congestion_control: 'bbr'
+# Kernel boot parameters for every node, written to /etc/default/grub.d.
+# Some hosts hide the CPU features cheap mitigations need, so the guest falls
+# back to Safe RET + retpolines on every kernel return and indirect call:
+# ~22% more CPU per bit and much lower upload on a single-vCPU node. Nodes
+# run only our own containers, so that in-guest isolation isn't worth it.
+# Hosts without update-grub are skipped. Set [] on a host to keep the
+# distribution defaults.
+kernel_cmdline_extra:
+  - spec_rstack_overflow=off
+  - spectre_v2=off
+# Reboot a node whose running kernel lacks kernel_cmdline_extra. site.yml
+# does it after provisioning, one node at a time, SSH jump hosts last, and
+# waits for the tunnel routes before moving on. false only prints a reminder.
+kernel_cmdline_reboot: true
 vpn_subnet_pool: '10.0.0.0/8'
 vpn_subnet_prefix: 24
 vpn_reserved_cidrs: []

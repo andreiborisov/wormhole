@@ -22,3 +22,7 @@
       - sing-box
     state: present
     recreate: always
+
+- name: Update grub
+  ansible.builtin.command: update-grub
+  changed_when: true

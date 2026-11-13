@@ -34,6 +34,47 @@
   roles:
     - wormhole
 
+# Kernel parameters (kernel_cmdline_extra) need a reboot. The controller may
+# reach a node through another one (SSH jump), so reboot leaves first and
+# jump hosts last, one node at a time. Each node must come back with its
+# tunnel routes before the next goes down; any failure stops the rollout.
+- name: Order reboots around SSH jump hosts
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Group nodes by whether another node is reached through them
+      ansible.builtin.group_by:
+        key: "{{ 'wormhole_jump_hosts' if inventory_hostname in _jump_hosts else 'wormhole_leaf_hosts' }}"
+      vars:
+        _jump_hosts: "{{ groups['all'] | map('extract', hostvars, 'wormhole_ssh_hops') | map('default', '') | join(',') | split(',') }}"
+      changed_when: false
+
+- name: Reboot leaf nodes for kernel parameters
+  hosts: wormhole_leaf_hosts
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: auto
+  tasks:
+    - name: Reboot when kernel parameters are pending
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: reboot.yml
+
+- name: Reboot jump hosts for kernel parameters
+  hosts: wormhole_jump_hosts
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: auto
+  tasks:
+    - name: Reboot when kernel parameters are pending
+      ansible.builtin.include_role:
+        name: wormhole
+        tasks_from: reboot.yml
+
 - name: Pack encrypted per-user config zips
   hosts: all
   gather_facts: false

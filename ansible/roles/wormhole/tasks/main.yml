@@ -97,6 +97,67 @@
     - { name: net.ipv4.tcp_no_metrics_save, value: '1' }
     - { name: net.ipv4.tcp_congestion_control, value: '{{ tcp_congestion_control }}' }
 
+# ── Kernel command line ──────────────────────────────────────────────────────
+
+- name: Check for update-grub
+  ansible.builtin.stat:
+    path: /usr/sbin/update-grub
+  register: wormhole_update_grub
+
+- name: Warn when kernel boot parameters cannot be managed
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has no update-grub, so these kernel parameters
+      were not applied: {{ kernel_cmdline_extra | join(' ') }}
+  when:
+    - kernel_cmdline_extra | length > 0
+    - not wormhole_update_grub.stat.exists
+
+- name: Create GRUB drop-in directory
+  ansible.builtin.file:
+    path: /etc/default/grub.d
+    state: directory
+    mode: '0755'
+  when:
+    - wormhole_update_grub.stat.exists
+    - kernel_cmdline_extra | length > 0
+
+- name: Set extra kernel boot parameters
+  ansible.builtin.copy:
+    dest: /etc/default/grub.d/99-wormhole.cfg
+    content: |
+      # Managed by Ansible (wormhole role, kernel_cmdline_extra).
+      GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT {{ kernel_cmdline_extra | join(' ') }}"
+    mode: '0644'
+  when:
+    - wormhole_update_grub.stat.exists
+    - kernel_cmdline_extra | length > 0
+  notify: Update grub
+
+- name: Remove extra kernel boot parameters
+  ansible.builtin.file:
+    path: /etc/default/grub.d/99-wormhole.cfg
+    state: absent
+  when:
+    - wormhole_update_grub.stat.exists
+    - kernel_cmdline_extra | length == 0
+  notify: Update grub
+
+- name: Read the running kernel command line
+  ansible.builtin.slurp:
+    src: /proc/cmdline
+  register: wormhole_proc_cmdline
+  when:
+    - wormhole_update_grub.stat.exists
+    - kernel_cmdline_extra | length > 0
+
+# site.yml reboots nodes listed here after provisioning (tasks/reboot.yml).
+- name: Find kernel boot parameters the running kernel lacks
+  ansible.builtin.set_fact:
+    wormhole_kernel_cmdline_missing: >-
+      {{ (kernel_cmdline_extra | reject('in', (wormhole_proc_cmdline.content | b64decode).split()) | list)
+         if (wormhole_update_grub.stat.exists and kernel_cmdline_extra | length > 0) else [] }}
+
 # ── Docker official apt repository ───────────────────────────────────────────
 
 - name: Install apt prerequisites
