@@ -113,6 +113,15 @@
     - kernel_cmdline_extra | length > 0
     - not wormhole_update_grub.stat.exists
 
+# The drop-in lists the parameters this role added, so a parameter later
+# removed from kernel_cmdline_extra can be detected (and rebooted away) too.
+- name: Read the previous kernel parameter drop-in
+  ansible.builtin.slurp:
+    src: /etc/default/grub.d/99-wormhole.cfg
+  register: wormhole_kernel_dropin_before
+  failed_when: false
+  when: wormhole_update_grub.stat.exists
+
 - name: Create GRUB drop-in directory
   ansible.builtin.file:
     path: /etc/default/grub.d
@@ -147,16 +156,23 @@
   ansible.builtin.slurp:
     src: /proc/cmdline
   register: wormhole_proc_cmdline
-  when:
-    - wormhole_update_grub.stat.exists
-    - kernel_cmdline_extra | length > 0
+  when: wormhole_update_grub.stat.exists
 
-# site.yml reboots nodes listed here after provisioning (tasks/reboot.yml).
-- name: Find kernel boot parameters the running kernel lacks
+# A reboot is due only when the running kernel differs from what this role
+# manages: a configured parameter is missing, or one it added before (and
+# has since dropped) is still active. site.yml reboots after provisioning
+# (tasks/reboot.yml); with no difference, nothing reboots.
+- name: Find kernel boot parameters to add or drop
   ansible.builtin.set_fact:
-    wormhole_kernel_cmdline_missing: >-
-      {{ (kernel_cmdline_extra | reject('in', (wormhole_proc_cmdline.content | b64decode).split()) | list)
-         if (wormhole_update_grub.stat.exists and kernel_cmdline_extra | length > 0) else [] }}
+    wormhole_kernel_cmdline_add: "{{ (kernel_cmdline_extra | reject('in', _running) | list) if _managed else [] }}"
+    wormhole_kernel_cmdline_drop: "{{ (_previous | reject('in', kernel_cmdline_extra) | select('in', _running) | list) if _managed else [] }}"
+  vars:
+    _managed: '{{ wormhole_update_grub.stat.exists }}'
+    _running: "{{ (wormhole_proc_cmdline.content | default('') | b64decode).split() }}"
+    # GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT a b" -> [a, b]
+    _previous: >-
+      {{ ((wormhole_kernel_dropin_before.content | default('') | b64decode).splitlines()
+          | select('match', 'GRUB_CMDLINE_LINUX_DEFAULT=') | first | default('=""')).split('"')[1].split()[1:] }}
 
 # ── Docker official apt repository ───────────────────────────────────────────
 

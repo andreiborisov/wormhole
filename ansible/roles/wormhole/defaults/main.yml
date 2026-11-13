@@ -15,9 +15,12 @@ tcp_congestion_control: 'bbr'
 kernel_cmdline_extra:
   - spec_rstack_overflow=off
   - spectre_v2=off
-# Reboot a node whose running kernel lacks kernel_cmdline_extra. site.yml
-# does it after provisioning, one node at a time, SSH jump hosts last, and
-# waits for the tunnel routes before moving on. false only prints a reminder.
+# Reboot a node only when its kernel parameters actually change: one in
+# kernel_cmdline_extra is not running yet, or one the role added before was
+# removed from the list and is still running. It also skips the reboot if
+# GRUB's next boot would not apply the change. site.yml reboots after
+# provisioning, one node at a time with SSH jump hosts last, and waits for
+# the tunnel routes before moving on. false only prints a reminder.
 kernel_cmdline_reboot: true
 vpn_subnet_pool: '10.0.0.0/8'
 vpn_subnet_prefix: 24

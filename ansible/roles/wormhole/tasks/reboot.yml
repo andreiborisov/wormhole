@@ -1,17 +1,63 @@
 ---
-# Reboot this node when its running kernel lacks kernel_cmdline_extra.
-# site.yml includes this one node at a time (serial: 1), leaves before SSH
-# jump hosts, so no node goes down while the controller reaches another node
-# through it. Any failure stops the remaining reboots.
+# Reboot this node only when its kernel parameters actually change: one in
+# kernel_cmdline_extra is missing from the running kernel, or one this role
+# added earlier was dropped from it and is still active. No change, no
+# reboot. site.yml includes this one node at a time (serial: 1), leaves
+# before SSH jump hosts, so no node goes down while the controller reaches
+# another node through it. Any failure stops the remaining reboots.
+
+- name: Collect pending kernel parameter changes
+  ansible.builtin.set_fact:
+    wormhole_kernel_cmdline_pending: >-
+      {{ (wormhole_kernel_cmdline_add | default([])) + (wormhole_kernel_cmdline_drop | default([])) }}
+
+# Something besides this role may have touched the GRUB config since grub.cfg
+# was last generated, so regenerate before trusting it.
+- name: Regenerate the GRUB config before deciding
+  ansible.builtin.command: update-grub
+  changed_when: false
+  when:
+    - kernel_cmdline_reboot | bool
+    - wormhole_kernel_cmdline_pending | length > 0
+
+- name: Read the kernel command line GRUB boots next
+  ansible.builtin.command: awk '$1 == "linux" { print; exit }' /boot/grub/grub.cfg
+  register: wormhole_grub_next
+  changed_when: false
+  when:
+    - kernel_cmdline_reboot | bool
+    - wormhole_kernel_cmdline_pending | length > 0
+
+# A reboot that GRUB will not honour (say another grub.d file overrides
+# ours) would only repeat on every run, so warn instead.
+- name: Decide whether the next boot applies the change
+  ansible.builtin.set_fact:
+    wormhole_kernel_reboot_due: >-
+      {{ (wormhole_kernel_cmdline_add | default([]) | reject('in', _next) | list | length == 0)
+         and (wormhole_kernel_cmdline_drop | default([]) | select('in', _next) | list | length == 0) }}
+  vars:
+    _next: '{{ wormhole_grub_next.stdout.split() }}'
+  when:
+    - kernel_cmdline_reboot | bool
+    - wormhole_kernel_cmdline_pending | length > 0
+
+- name: Warn when GRUB would not apply the kernel parameter change
+  ansible.builtin.debug:
+    msg: >-
+      Not rebooting {{ inventory_hostname }}: the next boot would not apply
+      add [{{ wormhole_kernel_cmdline_add | join(' ') }}]
+      drop [{{ wormhole_kernel_cmdline_drop | join(' ') }}].
+      Check /etc/default/grub and /etc/default/grub.d.
+  when:
+    - wormhole_kernel_reboot_due is defined
+    - not (wormhole_kernel_reboot_due | bool)
 
 - name: Reboot to apply kernel parameters
   ansible.builtin.reboot:
     msg: Rebooting to apply kernel parameters (wormhole role)
     reboot_timeout: 900
   register: wormhole_kernel_reboot
-  when:
-    - kernel_cmdline_reboot | bool
-    - wormhole_kernel_cmdline_missing | default([]) | length > 0
+  when: wormhole_kernel_reboot_due | default(false) | bool
 
 - name: Read the kernel command line after the reboot
   ansible.builtin.slurp:
@@ -22,11 +68,14 @@
 - name: Fail when the reboot did not apply the kernel parameters
   ansible.builtin.assert:
     that:
-      - wormhole_kernel_cmdline_missing | reject('in', (wormhole_proc_cmdline_after.content | b64decode).split()) | list | length == 0
+      - wormhole_kernel_cmdline_add | reject('in', _after) | list | length == 0
+      - wormhole_kernel_cmdline_drop | select('in', _after) | list | length == 0
     fail_msg: >-
-      {{ inventory_hostname }} rebooted but its kernel still lacks:
-      {{ wormhole_kernel_cmdline_missing | reject('in', (wormhole_proc_cmdline_after.content | b64decode).split()) | join(' ') }}
+      {{ inventory_hostname }} rebooted but its kernel command line is still
+      {{ _after | join(' ') }}
     quiet: true
+  vars:
+    _after: '{{ (wormhole_proc_cmdline_after.content | b64decode).split() }}'
   when: wormhole_kernel_reboot is changed
 
 # The router container restores the policy route once sing-box's TUN is up.
@@ -40,11 +89,12 @@
   failed_when: "'default dev sb-awg-in' not in wormhole_table100.stdout"
   when: wormhole_kernel_reboot is changed
 
-- name: Warn when kernel boot parameters wait for a reboot
+- name: Warn when a kernel parameter change waits for a reboot
   ansible.builtin.debug:
     msg: >-
       Reboot {{ inventory_hostname }} to apply kernel parameters:
-      {{ wormhole_kernel_cmdline_missing | join(' ') }}
+      add [{{ wormhole_kernel_cmdline_add | join(' ') }}]
+      drop [{{ wormhole_kernel_cmdline_drop | join(' ') }}]
   when:
     - not (kernel_cmdline_reboot | bool)
-    - wormhole_kernel_cmdline_missing | default([]) | length > 0
+    - wormhole_kernel_cmdline_pending | length > 0
