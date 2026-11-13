@@ -16,7 +16,7 @@
 {%- set _wg_clients = wireguard_clients_with_keys if wireguard_clients_with_keys is defined else [] -%}
 {%- set _has_wg_endpoints = wg_private_key is defined and (_wg_clients | length) > 0 -%}
 {%- set _vless_clients = vless_clients_with_credentials if vless_clients_with_credentials is defined else [] -%}
-{%- set _vpn_inbounds = ['awg-in'] + (['wg-ep'] if _has_wg_endpoints else []) -%}
+{%- set _vpn_inbounds = ['awg-in'] + (['awg-tcp'] if awg_tcp_redirect.enabled else []) + (['wg-ep'] if _has_wg_endpoints else []) -%}
 {%- set _all_full_cidrs = [] -%}
 {%- set _all_full_vless = [] -%}
 {%- for p in deterministic_peers -%}
@@ -154,6 +154,14 @@
       "auto_route": false,
       "mtu": 9000
     },
+{% if awg_tcp_redirect.enabled %}
+    {
+      "type": "redirect",
+      "tag": "awg-tcp",
+      "listen": "0.0.0.0",
+      "listen_port": {{ awg_tcp_redirect.port | int }}
+    },
+{% endif %}
     {
       "type": "hysteria2",
       "tag": "tunnel-in",

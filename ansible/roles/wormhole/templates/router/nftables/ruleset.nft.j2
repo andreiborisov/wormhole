@@ -11,6 +11,11 @@ table ip wormhole {
     ct state established,related accept
     iif lo accept
     iifname "awg-in" accept
+{% if awg_tcp_redirect.enabled %}
+    # The redirect inbound binds 0.0.0.0: only REDIRECTed AWG TCP (accepted
+    # above by iifname) may reach it, never the WAN.
+    tcp dport {{ awg_tcp_redirect.port | int }} drop
+{% endif %}
   }
 
   chain forward {
@@ -42,6 +47,14 @@ table ip wormhole {
     # DNAT to the TUN /30 peer (not local) so the packet is forwarded into
     # sb-awg-in and hijack-dns sees it. Conntrack restores .1 on the reply.
     iifname "awg-in" meta l4proto { tcp, udp } th dport 53 dnat to {{ awg_tun.dns_dnat }}
+{% if awg_tcp_redirect.enabled %}
+    # TCP fast path: terminate client TCP in the kernel off awg-in and hand
+    # it to sing-box's redirect inbound, skipping the per-packet TUN round
+    # trip. NAT is terminal, so DNS above keeps going to hijack-dns. Local
+    # addresses and other AWG clients (main-table route via awg-in) keep the
+    # old path; REDIRECT preserves the client source IP for policy rules.
+    iifname "awg-in" meta l4proto tcp fib daddr type != local fib daddr oifname != "awg-in" redirect to :{{ awg_tcp_redirect.port | int }}
+{% endif %}
   }
 
   chain postrouting {

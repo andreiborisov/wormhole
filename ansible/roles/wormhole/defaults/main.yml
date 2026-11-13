@@ -13,6 +13,14 @@ vpn_reserved_cidrs: []
 awg_tun:
   address: '172.19.10.1/30'
   dns_dnat: '172.19.10.2'
+# Hand AWG client TCP to a sing-box redirect inbound (nftables REDIRECT)
+# instead of the sb-awg-in TUN. The client's TCP then terminates in the
+# kernel straight off awg-in (TSO/GRO intact) and sing-box only copies
+# streams: ~20% less CPU per bit on a single-vCPU node. UDP and DNS stay on
+# the TUN. Set enabled: false on a host to keep TCP on the TUN too.
+awg_tcp_redirect:
+  enabled: true
+  port: 7891
 # Rate (Mbit/s) this node asks its Hysteria2 peers to send at. A non-zero
 # value makes the peer use Brutal at that fixed rate instead of BBR. BBRv1
 # ignores loss: when a single-vCPU receiver fell behind, 70-80% of the QUIC
