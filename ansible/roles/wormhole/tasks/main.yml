@@ -59,6 +59,9 @@
     state: present
     sysctl_file: /etc/sysctl.d/99-wormhole.conf
     reload: true
+  # A socket keeps the buffer size it was created with: restart sing-box so
+  # its Hysteria2 socket picks up a changed rmem_default.
+  notify: Restart sing-box
   loop:
     # Forwarding
     - { name: net.ipv4.ip_forward, value: '1' }
@@ -69,6 +72,13 @@
     - { name: net.core.somaxconn, value: '4096' }
     - { name: net.core.rmem_max, value: '67108864' }
     - { name: net.core.wmem_max, value: '67108864' }
+    # sing-box's Hysteria2 outbound never sets SO_RCVBUF, so its QUIC socket
+    # gets rmem_default. Under Brutal the kernel's 208 KB overflows on
+    # ordinary bursts and 2 MiB absorbs them (8 MiB measured slower: the
+    # queue inflates RTT). Under BBR a deeper buffer only lets the receiver
+    # decrypt more of the peer's duplicates, so keep the kernel default.
+    - name: net.core.rmem_default
+      value: "{{ '2097152' if (hysteria2.down_mbps | default(0) | int) > 0 else '212992' }}"
     - { name: net.core.netdev_max_backlog, value: '250000' }
     # TCP tuning
     - { name: net.ipv4.tcp_syncookies, value: '1' }

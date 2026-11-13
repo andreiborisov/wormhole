@@ -13,6 +13,17 @@ vpn_reserved_cidrs: []
 awg_tun:
   address: '172.19.10.1/30'
   dns_dnat: '172.19.10.2'
+# Rate (Mbit/s) this node asks its Hysteria2 peers to send at. A non-zero
+# value makes the peer use Brutal at that fixed rate instead of BBR. BBRv1
+# ignores loss: when a single-vCPU receiver fell behind, 70-80% of the QUIC
+# was lost and the peer re-sent 3.5-4.6x the goodput. Brutal never backs off
+# either, so set it per host to what this node can process under real load
+# (AWG clients share the vCPU), not to the raw link speed, and leave
+# headroom. On 1-vCPU dev nodes the ceiling was 600 both ways while the link
+# carried >1.5 Gbit/s (800 added only overhead; 2000 collapsed throughput to
+# BBR levels), so they run 500. 0 keeps BBR. Upload keeps BBR.
+hysteria2:
+  down_mbps: 0
 awg:
   port: 51820
 wg:

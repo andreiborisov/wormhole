@@ -222,6 +222,9 @@
       "server": "{{ hostvars[peer]['ansible_host'] }}",
       "server_port": {{ hysteria2.port }},
       "password": "{{ vault_hysteria2_password }}",
+{% if hysteria2.down_mbps | default(0) | int > 0 %}
+      "down_mbps": {{ hysteria2.down_mbps | int }},
+{% endif %}
       "tls": {
         "enabled": true,
         "insecure": true
