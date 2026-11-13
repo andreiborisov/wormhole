@@ -24,7 +24,12 @@ set -g TUN_IF sb-awg-in
 set -g TABLE 100
 set -g PREF 100
 set -g MARK 100
+# A full sync forks nft and ip several times (~40 ms of CPU, which a
+# single-vCPU node feels), so once converged it runs every FULL_EVERY polls.
+# In between, a fork-free sysfs read of both ifindexes catches the common
+# breakage (a container recreating awg-in or sb-awg-in) within one poll.
 set -g POLL_INTERVAL 2
+set -g FULL_EVERY 5
 
 function nft_ok
   nft list table ip wormhole >/dev/null 2>&1
@@ -101,8 +106,36 @@ function sync
   routes_ok; or apply_routes
 end
 
+# "<awg ifindex> <tun ifindex>" from sysfs; builtins only, no fork.
+function ifindexes
+  for iface in $AWG_IF $TUN_IF
+    set -l idx -
+    set -l f /sys/class/net/$iface/ifindex
+    test -r $f; and read idx <$f
+    printf '%s ' $idx
+  end
+end
+
+# The table survives a container restart, so the loop's missing-table check
+# alone would never load an updated ruleset (it waited for a reboot). Load
+# it once up front: the file flushes and redefines the table in one atomic
+# transaction, so live traffic never sees a half-applied ruleset.
+apply_nftables
+
 echo "Waiting for $AWG_IF and $TUN_IF..."
+set -l seen ''
+set -l polls 0
 while true
-  sync
+  set -l now (ifindexes)
+  if test $polls -le 0; or test "$now" != "$seen"
+    if sync
+      set seen $now
+      set polls $FULL_EVERY
+    else
+      set seen ''
+      set polls 0
+    end
+  end
+  set polls (math $polls - 1)
   sleep $POLL_INTERVAL
 end
